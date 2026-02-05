@@ -2,12 +2,8 @@
 
 Este repositorio contiene dos aplicaciones separadas:
 
-- **Backend**: Spring Boot (Java 17, Maven) — carpeta `backend/`
-- **Frontend**: React + Vite (JavaScript) — carpeta `boveda-digital-frontend/`
-
----
-
-## 📁 Estructura del repositorio
+- **Backend**: Spring Boot (Java 17, Maven) — rama `boveda-digital-api/`
+- **Frontend**: React + Vite (JavaScript) — rama `boveda-digital-frontend/`
 
 ---
 
