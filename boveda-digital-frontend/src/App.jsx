@@ -6,6 +6,13 @@ import './App.css'
 function App() {
   const [count, setCount] = useState(0)
 
+  useEffect(() => {
+      fetch('/api/hola')      // <- gracias al proxy, va a http://localhost:8080/api/hola
+        .then(r => r.text())
+        .then(setMsg)
+        .catch(() => setMsg('error al conectar con el backend'));
+    }, []);
+
   return (
     <>
       <div>
