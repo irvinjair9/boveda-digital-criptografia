@@ -5,6 +5,12 @@ Este repositorio contiene dos aplicaciones separadas:
 - **Backend**: Spring Boot (Java 17, Maven) — rama `boveda-digital-api/`
 - **Frontend**: React + Vite (JavaScript) — rama `boveda-digital-frontend/`
 
+## Roles asignados
+- **Aguilar Pérez José Ramón**: 
+- **Carbajal Reyes Irvin Jair**: 
+- **Gómez Vázquez Juan Pablo**:
+- **Sánchez Calvillo Saida Mayela**: 
+
 ---
 
 ## ✅ Prerrequisitos
