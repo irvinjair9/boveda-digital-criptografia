@@ -6,12 +6,13 @@ Este repositorio contiene dos aplicaciones separadas:
 - **Frontend**: React + Vite (JavaScript) — rama `boveda-digital-frontend/`
 
 ## Roles asignados
-- **Aguilar Pérez José Ramón**: 
-- **Carbajal Reyes Irvin Jair**: 
-- **Gómez Vázquez Juan Pablo**:
-- **Sánchez Calvillo Saida Mayela**: 
+- **Aguilar Pérez José Ramón**: Desarrollador de Algoritmos  
+- **Carbajal Reyes Irvin Jair**: Project Manager  
+- **Gómez Vázquez Juan Pablo**: Desarrollador Frontend  
+- **Sánchez Calvillo Saida Mayela**: Testing / QA  
 
 ---
+
 
 ## ✅ Prerrequisitos
 
