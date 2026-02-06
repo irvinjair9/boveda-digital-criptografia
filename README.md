@@ -11,6 +11,9 @@ Este repositorio contiene dos aplicaciones separadas:
 - **Gómez Vázquez Juan Pablo**: Desarrollador Frontend  
 - **Sánchez Calvillo Saida Mayela**: Testing / QA  
 
+## Canales de comunicación
+- Se estará trabajando por medio de llamadas de Google Meet, así como también nos estaremos comunicando por medio de un grupo de WhatsApp en caso de que los integrantes no puedan estar presencialmente.
+
 ---
 
 
