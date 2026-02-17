@@ -87,3 +87,15 @@ flowchart LR
   VER --> DEC
   KS --> DEC
   DEC --> UI
+```
+
+---
+
+## 4. Modelo de amenazas
+
+Para este sistema de laboratorio, hemos identificado los siguientes elementos a proteger y sus posibles adversarios:
+- Assets: Contenidos de experimentos, metadatos (como la fecha de la prueba, quien hizo el documento, dónde), llaves criptográficas, contraseñas de acceso y la validez de las firmas digitales.
+
+- Adversarios: Definimos a un atacante externo con acceso al almacenamiento que busca robar información (ataque pasivo) y a un atacante activo que intenta modificar los resultados o suplantar la identidad de un jefe de laboratorio para validar datos falsos.
+
+El atacante *puede* interceptar los contenedores en tránsito o intentar ataques de fuerza bruta contra las contraseñas, pero *no puede* romper los algoritmos matemáticos fuertes si las llaves se mantienen secretas
