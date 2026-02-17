@@ -132,3 +132,16 @@ El atacante *puede* interceptar los contenedores en tránsito o intentar ataques
 | Verificación de firma | Omitir o fallar en la validación | Autenticidad |
 
 ---
+
+## 7. Design Constraints (Restricciones de Diseño)
+
+Para cumplir con la seguridad, el diseño sigue estas reglas:
+
+| Requerimiento | Decisión de Diseño |
+| --- | --- |
+| Garantizar Integridad | <br>*Voy a cifrar* usando métodos que autentican el mensaje. |
+| Asegurar Autenticidad | <br>*Voy a usar firmas digitales* para cada documento. |
+| Proteger Llaves Privadas | <br>*Voy a usar una función de derivación (KDF)* para proteger llaves con contraseña. |
+| Verificación de Identidad | <br>*Voy a usar hash* para asegurar que el archivo no cambió. |
+
+---
