@@ -89,6 +89,15 @@ flowchart LR
   DEC --> UI
 ```
 
+### 3. Security Requirements (Requerimientos de Seguridad)
+
+El sistema debe cumplir con las siguientes propiedades:
+- **Confidencialidad:** Un atacante que obtenga el contenedor cifrado no podrá leer su contenido sin la llave privada.
+- **Integridad:** Cualquier modificación al contenedor cifrado debe ser detectada por el sistema.
+- **Autenticidad:** El receptor debe poder verificar la identidad del emisor mediante firmas digitales.
+- **Protección de Llaves:** Las llaves privadas deben mantenerse secretas incluso si el almacén de llaves es robado.
+- **Detección de Manipulación:** El sistema debe detectar alteraciones en los datos o en sus metadatos.
+
 ---
 
 ## 4. Modelo de amenazas
@@ -110,3 +119,16 @@ El atacante *puede* interceptar los contenedores en tránsito o intentar ataques
 * El sistema operativo del laboratorio genera números aleatorios seguros para el cifrado.
 * El lugar de almacenamiento final (disco duro o nube) es un entorno no confiable donde cualquier atacante podría tener acceso a los archivos cifrados
 
+--- 
+
+## 6. Attack Surface Review (Revisión de Superficie de Ataque)
+| Punto de Entrada | Riesgo | Propiedad Afectada |
+| :--- | :--- | :--- |
+| Entrada de archivos | Archivo malicioso para explotar la app | Integridad |
+| Procesamiento de metadatos | Metadatos alterados para engañar al sistema | Integridad |
+| Importación de llaves | Usar una llave pública falsa de un atacante | Confidencialidad |
+| Ingreso de contraseña | Robo o captura de la contraseña maestra | Confidencialidad de llaves |
+| Flujo de envío | Selección errónea de destinatarios | Confidencialidad] |
+| Verificación de firma | Omitir o fallar en la validación | Autenticidad |
+
+---
