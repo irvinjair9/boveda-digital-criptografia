@@ -99,3 +99,14 @@ Para este sistema de laboratorio, hemos identificado los siguientes elementos a 
 - Adversarios: Definimos a un atacante externo con acceso al almacenamiento que busca robar información (ataque pasivo) y a un atacante activo que intenta modificar los resultados o suplantar la identidad de un jefe de laboratorio para validar datos falsos.
 
 El atacante *puede* interceptar los contenedores en tránsito o intentar ataques de fuerza bruta contra las contraseñas, pero *no puede* romper los algoritmos matemáticos fuertes si las llaves se mantienen secretas
+
+
+---
+
+## 5. Supuestos de Confianza
+
+* Los usuarios eligen contraseñas seguras y no las comparten.
+* Las llaves públicas recibidas de otros colegas son auténticas y pertenecen realmente a quienes dicen ser
+* El sistema operativo del laboratorio genera números aleatorios seguros para el cifrado.
+* El lugar de almacenamiento final (disco duro o nube) es un entorno no confiable donde cualquier atacante podría tener acceso a los archivos cifrados
+
