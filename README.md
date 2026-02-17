@@ -39,12 +39,11 @@ En un entorno de laboratorio, la integridad de los resultados y la confidenciali
 ---
 ---
 
-## 2. Diagrama de Arquitectura 
+## 2. Diagrama de Arquitectura
 
 ```mermaid
 flowchart LR
 
-  %% ===== ENTORNO CONFIABLE USUARIO =====
   subgraph TRUSTED_USER[Confiable - Entorno del Usuario]
     direction TB
     U[Usuario]
@@ -56,13 +55,11 @@ flowchart LR
     DEC[Modulo de Descifrado]
   end
 
-  %% ===== ENTORNO CONFIABLE BACKEND =====
   subgraph TRUSTED_BACKEND[Confiable - Servicio Vault]
     direction TB
     API[Backend Vault API]
   end
 
-  %% ===== ENTORNO NO CONFIABLE =====
   subgraph UNTRUSTED[No Confiable - Almacenamiento y Red]
     direction TB
     SP1[ ]:::invisible
@@ -71,12 +68,11 @@ flowchart LR
     NET[[Transporte por Red]]
   end
 
-  classDef invisible fill=transparent,stroke=transparent,color=transparent;
+  classDef invisible fill:#ffffff,stroke:#ffffff,color:#ffffff,fill-opacity:0,stroke-opacity:0;
 
   PK[Llaves Publicas de Destinatarios]
   C[Contenedor de Archivo Cifrado]
 
-  %% ===== FLUJO DE CREACION =====
   U --> UI
   UI --> KS
   KS --> SIGN
@@ -88,7 +84,6 @@ flowchart LR
   API --> ST
   API --> NET
 
-  %% ===== FLUJO DE RECEPCION =====
   NET --> UI
   ST --> API
   API --> UI
