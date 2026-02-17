@@ -16,55 +16,24 @@ Este repositorio contiene dos aplicaciones separadas:
 
 ---
 
+# 🔬 Secure Digital Document Vault - Laboratorio
 
-## ✅ Prerrequisitos
+## 1. System Overview (Descripción General)
 
-Instala estas herramientas **antes** de comenzar:
+### ¿Qué problema resuelve nuestra bóveda?
 
-- **Git**
-- **Java 17 JDK**
-- **Apache Maven** (3.8+)
-- **Node.js** (LTS recomendado) y **npm**
-- **IDE recomendado**
-  - Backend: IntelliJ IDEA / Eclipse / VS Code (con extensiones Java)
-  - Frontend: VS Code
+En un entorno de laboratorio, la integridad de los resultados y la confidencialidad de las fórmulas son críticas. Este sistema evita que documentos sensibles sean leídos por personas no autorizadas o modificados malintencionadamente durante su envío entre investigadores.
 
-Verifica versiones:
-```bash
-git --version
-java -version
-mvn -version
-node -v
-npm -v
-```
-# Cómo correr los entornos
+### Funcionalidades principales:
 
-> **Nota:** Es importante clonar el repositorio **dos veces** en dos rutas distintas:  
-> - Un clon para el **frontend**  
-> - Un clon para el **backend**
+- **Cifrado de archivos:** Protege el contenido para que solo el destinatario pueda leerlo.
+- **Firmas digitales:** Permite verificar quién envió el documento y que este no ha sido alterado.
+- **Gestión de llaves:** Almacena y protege las llaves del usuario mediante una contraseña.
+- **Intercambio seguro:** Permite compartir un mismo archivo con múltiples colegas de forma protegida.
+
+### Fuera de alcance:
+
+- Seguridad física de las computadoras del laboratorio.
+- Recuperación de archivos si el usuario olvida su contraseña maestra.
 
 ---
-
-## 🟦 Cómo correr el backend
-
-1. Abrimos el proyecto clonado usando IntelliJ, y nos cambiamos de main a la rama **`boveda-digital-api`**
-2. Abrir la carpeta del proyecto clonado para el backend llamada  **`boveda-digital-api`** que se encuentra en el repositorio utilizando **IntelliJ IDEA**.
-3. Navegar a la ruta: src/main/java/com.example.boveda_digital_api/
-4. Dar clic derecho sobre el archivo y seleccionar **Run**.
-5. Una vez iniciado, podremos visualizar el endpoint en: http://localhost:8080/api/hola
-
----
-
-## 🟩 Cómo correr el frontend
-
-1. Abrimos el proyecto clonado usando IntelliJ, y nos cambiamos de main a la rama **`boveda-digital-frontend`**
-2. Abrir la carpeta **`boveda-digital-frontend`** del repositorio usando **Visual Studio Code**.
-4. Abrir una terminal nueva dentro de VS Code.
-5. Ejecutar los siguientes comandos:
-
-```bash
-npm install
-npm run dev
-```
-5. Podremos visualizarlo en: http://localhost:5000
-
