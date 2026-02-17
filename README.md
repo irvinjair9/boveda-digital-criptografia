@@ -62,13 +62,9 @@ flowchart LR
 
   subgraph UNTRUSTED[No Confiable - Almacenamiento y Red]
     direction TB
-    SP1[ ]:::invisible
-    SP2[ ]:::invisible
     ST[(Almacenamiento Local o Remoto)]
     NET[[Transporte por Red]]
   end
-
-  classDef invisible fill:#ffffff,stroke:#ffffff,color:#ffffff,fill-opacity:0,stroke-opacity:0;
 
   PK[Llaves Publicas de Destinatarios]
   C[Contenedor de Archivo Cifrado]
