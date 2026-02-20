@@ -48,6 +48,11 @@ body {
   margin: 0;
 }
 
+.springText {
+  color: rgb(10, 9, 9);
+  margin: 0;
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;

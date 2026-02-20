@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 
 function App() {
   const [count, setCount] = useState(0)
+  const [msg, setMsg] = useState('')
 
   useEffect(() => {
       fetch('/api/hola')      // <- gracias al proxy, va a http://localhost:8080/api/hola
@@ -19,6 +20,7 @@ function App() {
         
         <div className="container">
           <h1 className="titulo">hola mundo, esta es mi bóveda</h1>
+          <p className='springText'>{msg}</p>
         </div>
 
         <a href="https://vite.dev" target="_blank">
