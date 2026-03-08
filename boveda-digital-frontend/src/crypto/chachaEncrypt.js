@@ -54,6 +54,10 @@ export async function encryptFile(fileBuffer, fileName = "", fileSize = 0) {
     key
   );
 
+  // El tag Poly1305 son los últimos 16 bytes del ciphertext
+  const MACBYTES = sodium.crypto_aead_chacha20poly1305_ietf_ABYTES; // 16
+  const tag = sodium.to_hex(ciphertext.slice(-MACBYTES));
+
   // Ensamblar: [4 bytes longitud header][header JSON][nonce][ciphertext]
   const headerLen = encodeHeaderLength(metadataBytes.length);
   const output = new Uint8Array(
@@ -68,7 +72,8 @@ export async function encryptFile(fileBuffer, fileName = "", fileSize = 0) {
   return {
     encrypted: output,
     key: sodium.to_hex(key),
-    nonce: sodium.to_hex(nonce), // informativo; ya está embebido
+    nonce: sodium.to_hex(nonce),
+    tag,       // ← tag Poly1305 en hex para mostrar en UI
     metadata
   };
 }
@@ -136,12 +141,16 @@ export async function decryptFile(encryptedBuffer, keyHex, currentFileName = nul
     const nonce      = encryptedBuffer.slice(offset, offset + NPUBBYTES);
     const ciphertext = encryptedBuffer.slice(offset + NPUBBYTES);
 
+    // Extraer el tag (últimos 16 bytes del ciphertext)
+    const MACBYTES = sodium.crypto_aead_chacha20poly1305_ietf_ABYTES;
+    const tag = sodium.to_hex(ciphertext.slice(-MACBYTES));
+
     console.log("  - Metadatos:", metadata);
     console.log("  - nonce (hex):", sodium.to_hex(nonce));
+    console.log("  - tag (hex):", tag);
 
     let decrypted;
     try {
-      // Poly1305 verifica tanto el ciphertext COMO el AAD (metadataBytes)
       decrypted = sodium.crypto_aead_chacha20poly1305_ietf_decrypt(
         null,
         ciphertext,
@@ -150,14 +159,11 @@ export async function decryptFile(encryptedBuffer, keyHex, currentFileName = nul
         key
       );
     } catch {
-      // Si el AAD fue alterado O la key es incorrecta, libsodium lanza aquí.
-      // Distinguimos: si el header JSON se pudo parsear pero libsodium falla → key incorrecta.
-      // Si no se pudo parsear → metadatos alterados (ya lanzado arriba).
       throw new Error("KEY_INVALID: Clave incorrecta — no se puede descifrar el archivo con esta clave");
     }
 
     console.log("  ✅ Desencriptación exitosa, tamaño:", decrypted.length);
-    return { data: new Uint8Array(decrypted), metadata };
+    return { data: new Uint8Array(decrypted), metadata, nonce: sodium.to_hex(nonce), tag };
 
   } catch (error) {
     console.error("❌ Error en decryptFile:", error);
