@@ -1,0 +1,28 @@
+import { Link } from "react-router-dom";
+import "../styles/Navigation.css";
+
+function Navigation() {
+  return (
+    <nav className="navigation">
+      <div className="nav-container">
+        <Link to="/" className="nav-logo">
+          🔐 Bóveda Digital
+        </Link>
+        <ul className="nav-menu">
+          <li className="nav-item">
+            <Link to="/" className="nav-link">
+              🔐 Encriptar
+            </Link>
+          </li>
+          <li className="nav-item">
+            <Link to="/inbox" className="nav-link">
+              📬 Bandeja
+            </Link>
+          </li>
+        </ul>
+      </div>
+    </nav>
+  );
+}
+
+export default Navigation;
