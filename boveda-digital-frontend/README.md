@@ -107,18 +107,165 @@ npm run build
 
 ## 🔐 Seguridad
 
-- **Algoritmo**: ChaCha20-Poly1305 IETF
-- **Encriptación**: ChaCha20 (256-bit)
-- **Autenticación**: Poly1305 MAC (128-bit)
-- **Nonce**: 96-bit generado aleatoriamente
-- **Librería**: libsodium (implementación profesional)
+### Encryption Design Section
 
-### Características de Seguridad
+#### Algoritmo AEAD Seleccionado: ChaCha20-Poly1305 IETF
 
-✅ **AEAD** - Autenticación + Encriptación en una operación  
-✅ **Random Nonces** - Único para cada encriptación  
-✅ **Poly1305 Verification** - Detección automática de modificaciones  
-✅ **Constant-time Operations** - Resistente a timing attacks  
+**ChaCha20-Poly1305** es un esquema de Authenticated Encryption with Associated Data (AEAD) que combina dos primitivas criptográficas:
+
+- **ChaCha20**: Cifrado de flujo (stream cipher) que genera una secuencia pseudoaleatoria para cifrar los datos
+- **Poly1305**: Código de autenticación basado en MAC que genera una etiqueta de autenticidad
+
+Este algoritmo es considerado **estándar de facto moderno** y es recomendado por IETF (RFC 7539, RFC 8439).
+
+#### Parámetros Criptográficos
+
+| Parámetro | Valor | Descripción |
+|-----------|-------|-------------|
+| **Tamaño de Clave** | 256 bits (32 bytes) | Clave de encriptación compartida entre remitente y destinatario |
+| **Tamaño de Nonce** | 96 bits (12 bytes) | Número único utilizado una sola vez por clave |
+| **Tamaño de Tag** | 128 bits (16 bytes) | Código de autenticación que verifica integridad |
+| **Recomendación** | FIPS 202, NIST | Considerado criptográficamente seguro |
+
+#### Estrategia de Nonce
+
+El nonce es generado de forma **completamente aleatoria** para cada encriptación:
+
+```javascript
+const nonce = sodium.randombytes_buf(
+  sodium.crypto_aead_chacha20poly1305_ietf_NPUBBYTES // 12 bytes
+);
+```
+
+- **Generación**: Usando `randombytes_buf()` de libsodium (CSPRNG - Cryptographically Secure Pseudo-Random Number Generator)
+- **Frecuencia**: Un nonce diferente para cada archivo encriptado
+- **Garantía**: La probabilidad matemática de repetición con 96-bit random es prácticamente imposible (< 2^-64)
+
+#### Estrategia de Autenticación de Metadatos
+
+Los metadatos del archivo se protegen usando **Additional Associated Data (AAD)**:
+
+```javascript
+// Metadatos autenticados pero NO cifrados
+const metadata = { fileName, fileSize, version: 1 };
+const metadataJson = JSON.stringify(metadata);
+const metadataBytes = new TextEncoder().encode(metadataJson);
+
+// Encriptación con AAD
+const ciphertext = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(
+  fileBuffer,
+  metadataBytes,  // ← AAD: autenticado pero no cifrado
+  null,
+  nonce,
+  key
+);
+```
+
+**Beneficio**: El tag Poly1305 incluye tanto el contenido del archivo **como** los metadatos. Si alguien modifica el nombre o tamaño del archivo, la desencriptación **fallará automáticamente**.
+
+Formato del archivo `.encrypted`:
+```
+[4 bytes: longitud del header JSON]
+[N bytes: header JSON con metadatos (autenticado)]
+[12 bytes: nonce]
+[M bytes: ciphertext cifrado + 16 bytes Poly1305 tag]
+```
+
+### Security Decisions
+
+#### 1️⃣ ¿Por qué AEAD en lugar de Encriptación + Hash?
+
+**Razones técnicas:**
+
+| Aspecto | Encriptación + Hash | AEAD |
+|--------|---------------------|------|
+| **Complejidad** | 2 operaciones ❌ | 1 operación ✅ |
+| **Riesgo de Error** | Alto (puede fallar validación) | Bajo (falsa automáticamente) |
+| **Timing Attacks** | Vulnerable 🚨 | Resistente ✅ |
+| **Tag Implícito** | No, debe incluirse | Sí, integrado |
+| **Verificación Ordenada** | Crítica, fácil de equivocar | Automática ✅ |
+
+**Problema histórico (Encrypt-then-MAC vs others):**
+- Históricos implementadores han cometido errores fatales validando MAC después de desencriptar
+- Esto puede exponer información del contenido antes de validar autenticidad
+- AEAD **fuerza** a validar ambas simultáneamente
+
+**Nuestro caso:**
+AEAD garantiza que si el archivo fue modificado (incluso 1 bit), la validación Poly1305 fallará **antes** de retornar cualquier dato desencriptado.
+
+#### 2️⃣ ¿Qué Sucede si el Nonce se Repite?
+
+**Escenario del ataque:**
+
+Si se usa la **misma clave** con el **mismo nonce** dos veces:
+
+1. ChaCha20 genera el **mismo keystream** exacto
+2. Ciphertext1 XOR Keystream = Plaintext1
+3. Ciphertext2 XOR Keystream = Plaintext2
+4. **Ciphertext1 XOR Ciphertext2 = Plaintext1 XOR Plaintext2** ❌
+
+**Riesgo:**
+- Los dos plaintexts quedan XOReados, revelando su estructura
+- En textos normales, esto puede permitir recuperar parcialmente el contenido
+- **CRÍTICO**: Nunca reutilizar (clave, nonce)
+
+**Mitigación en Bóveda Digital:**
+- ✅ Nonce generado **aleatoriamente** cada vez (96-bit)
+- ✅ Probabilidad de colisión: < 1 en 2^64 operaciones
+- ✅ Incluso si se encripta 2^32 archivos, probabilidad de colisión < 0.0001%
+
+**Nota de construcción:** Para máxima seguridad, aplicaciones críticas usan nonces **secuenciales** (contador) con hardware dedicado, pero para encriptación web general, random es aceptable por libsodium.
+
+#### 3️⃣ ¿Contra Qué Atacantes nos Defendemos?
+
+**Perfil de Atacante Defendido:**
+
+| Tipo de Ataque | Defensa | Protección |
+|----------------|---------|-----------|
+| **Eavesdropping** (escucha de tráfico) | ChaCha20 encriptación |  ✅ Máxima |
+| **Modification** (cambio de contenido) | Poly1305 authentication | ✅ Máxima |
+| **Metadata Tampering** (modificación de nombre/tamaño) | AAD authentication | ✅ Máxima |
+| **Wrong Key Detection** | Tag validation | ✅ Detección automática |
+| **Timing Attacks** (información por tiempo) | Constant-time libsodium | ✅ Protegido |
+
+**Atacantes NO defendidos:**
+
+| Ataque | Razón | Mitigation |
+|--------|-------|-----------|
+| **Key Brute-Force** | 256-bit key space (2^256) | Imposible en tiempo polinomial |
+| **Side-Channel local** | Acceso físico a la máquina | Uso de libsodium (constant-time) |
+| **Quantum Computing** | Amenaza futura | Considerar Post-Quantum Cryptography en futuro |
+| **Keylogger/Malware** | Acceso a sistema operativo | Escapa del alcance de la criptografía |
+| **Social Engineering** | Engaño de usuario | Educación del usuario |
+
+**Modelo de Amenaza Asumido:**
+
+✅ Protegemos contra:
+- Red insegura (ej: Wi-Fi público)
+- Interceptación pasiva
+- Modificación accidental o malintencionada
+- Archivos interceptados en tránsito o almacenamiento
+
+❌ Suponemos que:
+- La clave es secreta y transmitida de forma segura (fuera de banda o HTTPS)
+- El dispositivo del usuario no está comprometido
+- No hay acceso root/admin al sistema
+
+#### Recomendaciones de Uso Seguro
+
+1. **Compartir claves de forma segura**:
+   - No usar el mismo email/chat que el archivo
+   - Usar canal secundario (teléfono, mensaje encriptado)
+   - Verificar identidad del destinatario
+
+2. **Gestión de claves**:
+   - No guardar claves en texto plano
+   - No reutilizar claves entre diferentes archivos
+   - Eliminar claves después de confirmaciónnoon recepción
+
+3. **Almacenamiento**:
+   - Archivos `.encrypted` + claveson seguros en internet
+   - Sin clave, el archivo es matemáticamente inutilizable  
 
 ## 📦 Dependencias Principales
 
