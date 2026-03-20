@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import "../styles/Navigation.css";
 
-function Navigation() {
+function Navigation({ usuario, onLogout }) {
   return (
     <nav className="navigation">
       <div className="nav-container">
@@ -18,6 +18,12 @@ function Navigation() {
             <Link to="/inbox" className="nav-link">
               📬 Bandeja
             </Link>
+          </li>
+          <li className="nav-item nav-user">
+            <span className="nav-username">👤 {usuario?.username}</span>
+            <button className="nav-logout" onClick={onLogout}>
+              Salir
+            </button>
           </li>
         </ul>
       </div>
