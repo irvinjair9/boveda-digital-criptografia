@@ -1,5 +1,6 @@
 package com.example.boveda_digital_api.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 @Entity
@@ -12,11 +13,16 @@ public class UsersEntity {
     private String name;
 
     @Column(name = "last_name")
+    @JsonProperty("last_name")
     private String lastName;
 
     private String username;
     private String email;
     private String password;
+
+    @Column(name = "public_key", columnDefinition = "TEXT")
+    @JsonProperty("public_key")
+    private String publicKey;
 
     public Long getId() {
         return id;
@@ -64,5 +70,13 @@ public class UsersEntity {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getPublicKey() {
+        return publicKey;
+    }
+
+    public void setPublicKey(String publicKey) {
+        this.publicKey = publicKey;
     }
 }

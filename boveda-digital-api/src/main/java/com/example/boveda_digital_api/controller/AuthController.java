@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -26,15 +27,17 @@ public class AuthController {
         Optional<UsersEntity> user = usersService.login(username, password);
 
         if (user.isPresent()) {
-            return ResponseEntity.ok(Map.of(
-                "message", "Login exitoso",
-                "user", Map.of(
-                    "id", user.get().getId(),
-                    "name", user.get().getName(),
-                    "email", user.get().getEmail(),
-                    "username", user.get().getUsername()
-                )
-            ));
+            Map<String, Object> userMap = new HashMap<>();
+            userMap.put("id", user.get().getId());
+            userMap.put("name", user.get().getName());
+            userMap.put("email", user.get().getEmail());
+            userMap.put("username", user.get().getUsername());
+            userMap.put("public_key", user.get().getPublicKey());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Login exitoso");
+            response.put("user", userMap);
+            return ResponseEntity.ok(response);
         }
 
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -49,14 +52,17 @@ public class AuthController {
         }
 
         UsersEntity saved = usersService.registerUser(userData);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-            "message", "Usuario registrado exitosamente",
-            "user", Map.of(
-                "id", saved.getId(),
-                "name", saved.getName(),
-                "email", saved.getEmail(),
-                "username", saved.getUsername()
-            )
-        ));
+
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("id", saved.getId());
+        userMap.put("name", saved.getName());
+        userMap.put("email", saved.getEmail());
+        userMap.put("username", saved.getUsername());
+        userMap.put("public_key", saved.getPublicKey());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Usuario registrado exitosamente");
+        response.put("user", userMap);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }
