@@ -30,7 +30,7 @@ function App() {
       <Navigation usuario={usuario} onLogout={handleLogout} />
       <div style={{ marginTop: "70px" }}>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard usuario={usuario} />} />
           <Route path="/inbox" element={<Inbox />} />
         </Routes>
       </div>
