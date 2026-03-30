@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { login, register } from "../services/authService";
+import { downloadBlob } from "../crypto/dataUtils";
 import "../styles/Login.css";
 
 function Login({ onLoginSuccess }) {
@@ -49,8 +50,13 @@ function Login({ onLoginSuccess }) {
     setSuccess("");
     setLoading(true);
     try {
-      await register(regForm);
-      setSuccess("Registro exitoso. Ya puedes iniciar sesión.");
+      const result = await register(regForm);
+
+      // Descargar automáticamente la clave privada cifrada
+      const blob = new Blob([result.encryptedPrivateKey], { type: "application/octet-stream" });
+      downloadBlob(blob, `${regForm.username}_private_key.encrypted`);
+
+      setSuccess("Registro exitoso. Tu clave privada cifrada se ha descargado. Ya puedes iniciar sesión.");
       setRegForm({
         name: "",
         lastName: "",
