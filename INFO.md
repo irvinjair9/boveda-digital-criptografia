@@ -123,3 +123,272 @@ Un atacante que renombra un archivo `.txt` a `.exe` en la base de datos para eng
 | 7 | **BLAKE2b es suficiente para el hash de contraseña** | BLAKE2b es rápido por diseño (no resistente a brute-force como Argon2). Se asume que las contraseñas son suficientemente fuertes o que hay rate-limiting en el servidor. | Brute-force offline si se filtra el hash |
 | 8 | **No se requiere forward secrecy** | Si una clave privada X25519 se compromete, todos los archivos pasados compartidos con esa clave pueden descifrarse. No se usan claves efímeras por archivo. | Compromiso de historial completo de archivos compartidos |
 | 9 | **La colisión de nonce es negligible** | Con nonces aleatorios de 96 bits, la probabilidad de colisión es < 2⁻³² tras 2³² cifrados con la misma clave. En la práctica web, el volumen de archivos está muy por debajo de ese umbral. | Reutilización de (key, nonce) rompe confidencialidad (XOR de plaintexts) |
+
+---
+
+## D. Cryptographic Design (3–4 min)
+
+### D2 — Symmetric Encryption: AEAD, Nonce Strategy & Metadata
+
+#### AEAD Choice: ChaCha20-Poly1305 IETF
+
+**¿Por qué ChaCha20-Poly1305 y no AES-GCM?**
+
+| Criterio | ChaCha20-Poly1305 | AES-GCM |
+|---|---|---|
+| **Rendimiento en software** | Rápido sin instrucciones AES-NI (ideal para navegadores / WebAssembly) | Requiere AES-NI para rendimiento competitivo |
+| **Seguridad ante timing attacks** | Operaciones en tiempo constante por diseño | Vulnerable si la implementación no usa AES-NI |
+| **Estándar** | RFC 8439, usado en TLS 1.3, WireGuard, Signal | RFC 5116, ampliamente adoptado |
+| **Autenticación** | Integrada (AEAD): cifra + autentica en una sola operación | Integrada (AEAD) |
+| **Tamaño de nonce** | 96 bits (12 bytes) | 96 bits (12 bytes) |
+
+**Implementación en el proyecto** ([src/crypto/chachaEncrypt.js](src/crypto/chachaEncrypt.js)):
+
+```javascript
+// Cifrado AEAD — una sola llamada cubre confidencialidad + integridad
+const ciphertext = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(
+  fileBuffer,        // plaintext (contenido del archivo)
+  metadataBytes,     // AAD (Additional Authenticated Data)
+  null,              // nsec (no usado en IETF variant)
+  nonce,             // 12 bytes aleatorios
+  key                // 32 bytes aleatorios (256 bits)
+);
+// Resultado: ciphertext || 16-byte Poly1305 tag (concatenados automáticamente)
+```
+
+**Ventaja clave de AEAD vs Encrypt-then-MAC manual:**
+- En Encrypt-then-MAC, el desarrollador debe verificar el MAC **antes** de descifrar. Si se olvida o lo hace en orden incorrecto, se expone a ataques de padding oracle.
+- Con AEAD, `crypto_aead_*_decrypt()` **rechaza automáticamente** datos alterados y **nunca retorna plaintext** si el tag no verifica. Es imposible olvidar la verificación.
+
+#### Nonce Strategy
+
+```
+Estrategia: NONCE ALEATORIO (Random Nonce)
+
+┌─────────────────────────────────────────────────┐
+│ sodium.randombytes_buf(12)  →  96 bits random   │
+│                                                   │
+│ Se genera un nonce NUEVO por cada archivo        │
+│ Se genera una KEY NUEVA por cada archivo         │
+│ → El par (key, nonce) es único por construcción  │
+└─────────────────────────────────────────────────┘
+```
+
+**¿Por qué nonce aleatorio y no un contador?**
+
+| Aspecto | Nonce aleatorio (este proyecto) | Nonce contador |
+|---|---|---|
+| **Estado requerido** | Sin estado — no necesita persistir un contador | Requiere almacenar y sincronizar un contador |
+| **Riesgo de colisión** | < 2⁻³² tras 2³² cifrados (birthday bound a 96 bits) | Cero si el contador no se reinicia |
+| **Adecuado para web** | ✅ Ideal — no hay estado persistente entre sesiones del navegador | ❌ Problemático — el contador puede perderse al cerrar pestaña |
+| **Con clave única por archivo** | ✅ Riesgo de colisión = 0 en la práctica (cada archivo tiene su propia clave) | Innecesario si la clave ya es única |
+
+**Dato clave:** Como cada archivo genera su propia clave simétrica aleatoria de 256 bits, el nonce solo necesita ser único *dentro de los cifrados con esa misma clave*. Como solo se cifra **un archivo por clave**, la colisión de nonce es imposible en la práctica.
+
+**Almacenamiento del nonce** — se embebe en el archivo cifrado:
+```
+[4B header len][metadata JSON][12B NONCE][ciphertext + 16B tag]
+                                ^^^^^^^^
+                                Almacenado en claro dentro del contenedor
+                                (el nonce NO es secreto — solo debe ser único)
+```
+
+#### Metadata + AAD (Additional Authenticated Data)
+
+**¿Qué es AAD?**
+AAD son datos que se **autentican pero NO se cifran**. El tag Poly1305 cubre tanto el ciphertext como el AAD, garantizando que ambos son íntegros.
+
+**Metadata incluida como AAD:**
+```json
+{
+  "fileName": "documento-confidencial.pdf",
+  "fileSize": 1048576,
+  "version": 1
+}
+```
+
+**Flujo de verificación:**
+```
+┌────────────────────────────────┐
+│ CIFRADO                        │
+│                                │
+│ metadata (AAD) ──┐             │
+│                  ├──→ Poly1305 TAG (128 bits)
+│ archivo (enc) ───┘             │
+└────────────────────────────────┘
+
+┌────────────────────────────────┐
+│ DESCIFRADO                     │
+│                                │
+│ metadata (AAD) ──┐             │
+│                  ├──→ ¿TAG coincide?
+│ ciphertext ──────┘             │
+│                                │
+│   ✅ SÍ → descifrar y retornar│
+│   ❌ NO → RECHAZAR (error)    │
+│          nunca retorna datos   │
+└────────────────────────────────┘
+```
+
+**Ataque prevenido:**
+Un atacante con acceso al servidor intenta renombrar `informe.pdf` → `malware.exe` en la metadata del blob almacenado. Al descifrar:
+1. Se extrae la metadata modificada como AAD
+2. Se recalcula el tag Poly1305 sobre (ciphertext + metadata modificada)
+3. El tag **no coincide** con el tag original almacenado
+4. `crypto_aead_*_decrypt()` retorna error — **cero bytes de plaintext expuestos**
+
+**¿Por qué no cifrar la metadata?**
+- Permite al sistema mostrar nombre y tamaño de archivo en la UI **sin descifrar** el contenido completo
+- La autenticación vía AAD es suficiente: la metadata no puede alterarse sin detección
+- El nombre del archivo no se considera secreto en este modelo (el contenido sí)
+
+---
+
+### D3 — Hybrid Encryption: Key Wrapping & Recipient Handling
+
+#### Hybrid Encryption Workflow
+
+El sistema usa **cifrado híbrido**: combina cifrado simétrico (rápido, para el archivo) con cifrado asimétrico (para distribuir la clave).
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  PASO 1: Cifrado simétrico del archivo                              │
+│                                                                      │
+│  archivo.pdf ──→ ChaCha20-Poly1305(key, nonce) ──→ archivo.encrypted│
+│                   ↑                                                  │
+│            key = 32 bytes aleatorios (CSPRNG)                       │
+│            nonce = 12 bytes aleatorios                               │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ key simétrica (32 bytes)
+┌─────────────────────────────────────────────────────────────────────┐
+│  PASO 2: Key wrapping asimétrico (por cada receptor)                │
+│                                                                      │
+│  Para receptor A:                                                    │
+│    crypto_box_seal(key, pubKey_A) ──→ wrapped_key_A (48 bytes)      │
+│                                                                      │
+│  Para receptor B:                                                    │
+│    crypto_box_seal(key, pubKey_B) ──→ wrapped_key_B (48 bytes)      │
+│                                                                      │
+│  Para receptor C:                                                    │
+│    crypto_box_seal(key, pubKey_C) ──→ wrapped_key_C (48 bytes)      │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PASO 3: Envío al servidor                                          │
+│                                                                      │
+│  POST /api/files/share                                               │
+│  {                                                                   │
+│    file: archivo.encrypted,                                          │
+│    filename: "archivo.pdf",                                          │
+│    owner_id: sender_id,                                              │
+│    iv: nonce_hex,                                                    │
+│    shares: [                                                         │
+│      { user_id: A, encrypted_symmetric_key: wrapped_key_A_hex },    │
+│      { user_id: B, encrypted_symmetric_key: wrapped_key_B_hex },    │
+│      { user_id: C, encrypted_symmetric_key: wrapped_key_C_hex }     │
+│    ]                                                                 │
+│  }                                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**¿Por qué `crypto_box_seal` y no `crypto_box`?**
+
+| Propiedad | `crypto_box_seal` (Sealed Box) | `crypto_box` (Authenticated Box) |
+|---|---|---|
+| **Autenticación del emisor** | ❌ Anónimo — el receptor no sabe quién cifró | ✅ Autenticado — verifica identidad del emisor |
+| **Claves necesarias para cifrar** | Solo la pubkey del receptor | Pubkey receptor + privkey emisor |
+| **Uso en Bóveda Digital** | ✅ Se usa este — el `owner_id` en la BD identifica al emisor | — |
+| **Internamente** | Genera keypair efímero X25519, DH con pubkey receptor, cifra con XSalsa20-Poly1305 | DH directo entre emisor y receptor |
+
+#### How Recipients Are Handled
+
+**Flujo en [EncryptShare.jsx](src/components/EncryptShare.jsx):**
+
+```
+1. Usuario emisor selecciona archivo + receptores en la UI
+
+2. GET /api/users → obtiene lista de usuarios con sus claves públicas
+   Respuesta: [{ id, name, username, public_key }, ...]
+
+3. El archivo se cifra UNA sola vez (una clave simétrica, un nonce)
+
+4. Para CADA receptor seleccionado:
+   a. Obtener su public_key (hex → Uint8Array)
+   b. crypto_box_seal(symmetricKey, recipientPublicKey)
+   c. Almacenar: { user_id, encrypted_symmetric_key: hex }
+
+5. Enviar al servidor: 1 archivo cifrado + N wrapped keys
+```
+
+**Propiedad importante:** El archivo se cifra **una única vez** independientemente del número de receptores. Solo la clave simétrica (32 bytes) se envuelve múltiples veces — una por receptor. Esto es eficiente: envolver una clave de 32 bytes es instantáneo comparado con cifrar un archivo de varios MB.
+
+**Descifrado por el receptor** ([DecryptShared.jsx](src/components/DecryptShared.jsx)):
+
+```
+1. Receptor carga su archivo de clave privada (.encrypted)
+2. Ingresa su contraseña
+3. decryptPrivateKey(encryptedPrivKey, password)
+   → BLAKE2b(password) → clave derivada
+   → XSalsa20-Poly1305 decrypt → clave privada X25519
+4. Para el archivo compartido:
+   a. GET /api/files/shared/download/{fileId} → blob cifrado
+   b. Obtener wrapped_key del share correspondiente
+   c. crypto_box_seal_open(wrapped_key, pubKey, privKey) → clave simétrica
+   d. decryptFile(blob, symmetricKey) → archivo original
+```
+
+#### How Keys Are Identified
+
+El sistema gestiona **tres tipos de claves** con ciclos de vida distintos:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ CLAVE SIMÉTRICA (por archivo)                                    │
+│ Vida: efímera — generada al cifrar, descartada tras compartir   │
+│ Tamaño: 256 bits (32 bytes)                                     │
+│ Generación: sodium.randombytes_buf(32)                           │
+│ Almacenamiento: NUNCA en claro en servidor                       │
+│   → Envuelta con pubkey de cada receptor (crypto_box_seal)      │
+│   → Almacenada como encrypted_symmetric_key en tabla shares     │
+│ Identificación: implícita por file_id + user_id en la BD        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ PAR DE CLAVES ASIMÉTRICO X25519 (por usuario)                   │
+│ Vida: persistente — generado una vez al registrarse             │
+│ Tamaño: 32 bytes (pub) + 32 bytes (priv)                       │
+│ Generación: sodium.crypto_box_keypair()                          │
+│                                                                   │
+│ Clave pública:                                                   │
+│   → Almacenada en servidor (campo public_key del usuario)       │
+│   → Accesible vía GET /api/users                                │
+│   → Identificada por: user_id                                   │
+│                                                                   │
+│ Clave privada:                                                   │
+│   → Cifrada con XSalsa20-Poly1305 (clave derivada de password) │
+│   → Exportada como archivo .encrypted al registro               │
+│   → El usuario la conserva localmente (NUNCA en el servidor)    │
+│   → Identificada por: el usuario la gestiona manualmente        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ CLAVE DERIVADA DE CONTRASEÑA (por usuario)                      │
+│ Vida: transitoria — existe solo en memoria del navegador        │
+│ Tamaño: 256 bits (32 bytes)                                     │
+│ Derivación: BLAKE2b(password) → 32 bytes                        │
+│ Uso: descifrar la clave privada X25519                          │
+│ Almacenamiento: NUNCA persistida — solo en RAM durante sesión   │
+│ Identificada por: implícita (derivada de la contraseña)         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Resumen de identificación de claves:**
+
+| Clave | ¿Dónde se almacena? | ¿Cómo se identifica? |
+|---|---|---|
+| Simétrica (archivo) | Wrapped en BD (`shares` table) | `file_id` + `user_id` |
+| Pública X25519 | BD del servidor (`users` table) | `user_id` |
+| Privada X25519 | Archivo local del usuario (`.encrypted`) | Gestión manual del usuario |
+| Derivada de password | Solo RAM del navegador | Implícita (se recalcula cada vez) |
