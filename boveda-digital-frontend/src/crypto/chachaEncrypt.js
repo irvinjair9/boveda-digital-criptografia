@@ -1,15 +1,20 @@
 import sodium from "libsodium-wrappers";
+import { canonicalizeToBytes } from "./canonicalize.js";
 
 /**
  * Formato del archivo .encrypted:
  *   [ 4 bytes uint32 BE: longitud del header JSON ]
- *   [ N bytes: header JSON con metadatos (AAD) ]
+ *   [ N bytes: header JSON con metadata canónica (AAD) ]
  *   [ 12 bytes: nonce ]
  *   [ M bytes: ciphertext + 16 bytes Poly1305 tag ]
  *
- * Los metadatos (nombre y tamaño del archivo) se usan como AAD (Additional
+ * Los metadatos canónicos (algorithm, createdAt, fileName, fileSize, version) se usan como AAD (Additional
  * Associated Data). Poly1305 los autentica junto con el ciphertext, por lo que
- * cualquier modificación al header hace que la desencriptación falle.
+ * cualquier modificación a estos campos hace que la desencriptación falle.
+ * 
+ * La metadata canónica garantiza determinismo: dos archivos con los mismos valores
+ * en los mismos campos producirán exactamente los mismos bytes (independiente del orden
+ * en que se escriban las claves).
  */
 
 const HEADER_LENGTH_BYTES = 4; // uint32 big-endian que indica el tamaño del JSON
@@ -29,10 +34,14 @@ function decodeHeaderLength(buf) {
 
 /**
  * Encripta un archivo usando ChaCha20-Poly1305 con metadatos autenticados (AAD).
+ * 
+ * La metadata se canonicaliza completamente y se usa como AAD (Additional Associated Data).
+ * Esto asegura que cualquier modificación a los metadatos invalida el archivo descifrado.
+ * 
  * @param {Uint8Array} fileBuffer - Contenido del archivo
  * @param {string} fileName - Nombre original del archivo
  * @param {number} fileSize - Tamaño original en bytes
- * @returns {Promise<{encrypted: Uint8Array, key: string, nonce: string}>}
+ * @returns {Promise<{encrypted: Uint8Array, key: string, nonce: string, metadata: Object}>}
  */
 export async function encryptFile(fileBuffer, fileName = "", fileSize = 0) {
   await sodium.ready;
@@ -40,12 +49,18 @@ export async function encryptFile(fileBuffer, fileName = "", fileSize = 0) {
   const key = sodium.randombytes_buf(sodium.crypto_aead_chacha20poly1305_ietf_KEYBYTES);
   const nonce = sodium.randombytes_buf(sodium.crypto_aead_chacha20poly1305_ietf_NPUBBYTES);
 
-  // Metadatos que se autenticarán pero NO se cifrarán
-  const metadata = { fileName, fileSize, version: 1 };
-  const metadataJson = JSON.stringify(metadata);
-  const metadataBytes = new TextEncoder().encode(metadataJson);
+  // Metadatos canónicos que se autenticarán pero NO se cifrarán
+  // Estructura: { algorithm, createdAt, fileName, fileSize, version }
+  const metadata = {
+    algorithm: "ChaCha20-Poly1305",
+    createdAt: new Date().toISOString(),
+    fileName,
+    fileSize,
+    version: 1
+  };
+  const metadataBytes = canonicalizeToBytes(metadata);
 
-  // Cifrar con AAD = metadatos
+  // Cifrar con AAD = metadatos canónicos
   const ciphertext = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(
     fileBuffer,
     metadataBytes, // AAD: autenticado pero no cifrado
