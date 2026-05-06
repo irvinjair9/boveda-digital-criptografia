@@ -4,6 +4,7 @@ import { decryptPrivateKey } from "../crypto/keyPair";
 import { decryptFile } from "../crypto/chachaEncrypt";
 import { downloadBlob } from "../crypto/dataUtils";
 import { getSharedWithMe, downloadSharedFile } from "../services/fileService";
+import { sendErrorLog } from "../services/errorLogService";
 
 function DecryptShared({ usuario }) {
   const [sharedFiles, setSharedFiles] = useState([]);
@@ -100,14 +101,16 @@ function DecryptShared({ usuario }) {
 
       setMessage(`✅ Archivo "${originalName}" descifrado y descargado`);
     } catch (err) {
-      const msg = err.message || "";
-      if (msg.includes("Contraseña incorrecta") || msg.includes("crypto_secretbox_open")) {
-        setMessage("❌ Contraseña incorrecta. No se pudo descifrar la clave privada.");
-      } else if (msg.startsWith("KEY_INVALID")) {
-        setMessage("❌ La llave simétrica descifrada no es válida para este archivo.");
-      } else {
-        setMessage(`❌ Error al descifrar: ${msg}`);
-      }
+      console.log("ERROR_REAL_DECRYPT:", err);
+
+      await sendErrorLog({
+        module: "DecryptShared.handleDecrypt",
+        publicMessage: "DECRYPT_FAILED: archivo o credenciales inválidas",
+        internalReason: err?.message || "UNKNOWN_ERROR",
+        details: String(err)
+      });
+
+      setMessage("❌ DECRYPT_FAILED: archivo o credenciales inválidas");
     } finally {
       setDecrypting(null);
     }
