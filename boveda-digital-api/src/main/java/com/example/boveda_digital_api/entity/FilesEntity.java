@@ -1,5 +1,6 @@
 package com.example.boveda_digital_api.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
@@ -18,9 +19,9 @@ public class FilesEntity {
 
     private String filename;
 
-    @Column(name = "file_path")
-    @JsonProperty("file_path")
-    private String filePath;
+    @Column(name = "file_content", columnDefinition = "bytea")
+    @JsonIgnore
+    private byte[] fileContent;
 
     private String iv;
 
@@ -42,8 +43,8 @@ public class FilesEntity {
     public String getFilename() { return filename; }
     public void setFilename(String filename) { this.filename = filename; }
 
-    public String getFilePath() { return filePath; }
-    public void setFilePath(String filePath) { this.filePath = filePath; }
+    public byte[] getFileContent() { return fileContent; }
+    public void setFileContent(byte[] fileContent) { this.fileContent = fileContent; }
 
     public String getIv() { return iv; }
     public void setIv(String iv) { this.iv = iv; }

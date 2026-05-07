@@ -8,14 +8,10 @@ import com.example.boveda_digital_api.entity.FilesEntity;
 import com.example.boveda_digital_api.entity.UsersEntity;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 @Service
@@ -25,35 +21,22 @@ public class FilesService {
     private final FileSharesDAO fileSharesDAO;
     private final UsersDAO usersDAO;
     private final ObjectMapper objectMapper;
-    private final Path storageDir;
 
-    public FilesService(FilesDAO filesDAO, FileSharesDAO fileSharesDAO, UsersDAO usersDAO,
-                        @Value("${files.storage.path:uploads}") String storagePath) {
+    public FilesService(FilesDAO filesDAO, FileSharesDAO fileSharesDAO, UsersDAO usersDAO) {
         this.filesDAO = filesDAO;
         this.fileSharesDAO = fileSharesDAO;
         this.usersDAO = usersDAO;
         this.objectMapper = new ObjectMapper();
-        this.storageDir = Paths.get(storagePath).toAbsolutePath();
     }
 
     public void shareFile(MultipartFile file, String filename, Long ownerId, String sharesJson, String iv) throws IOException {
-        // Ensure storage directory exists
-        Files.createDirectories(storageDir);
-
-        // Save file to disk with unique name
-        String storedName = UUID.randomUUID() + "_" + filename;
-        Path filePath = storageDir.resolve(storedName);
-        file.transferTo(filePath.toFile());
-
-        // Insert into files table
         FilesEntity filesEntity = new FilesEntity();
         filesEntity.setOwnerId(ownerId);
         filesEntity.setFilename(filename);
-        filesEntity.setFilePath(filePath.toString());
+        filesEntity.setFileContent(file.getBytes());
         filesEntity.setIv(iv);
         FilesEntity savedFile = filesDAO.save(filesEntity);
 
-        // Parse shares JSON and insert into file_shares
         List<Map<String, Object>> shares = objectMapper.readValue(sharesJson, new TypeReference<>() {});
         for (Map<String, Object> share : shares) {
             FileSharesEntity shareEntity = new FileSharesEntity();
