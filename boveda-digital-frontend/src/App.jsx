@@ -2,7 +2,6 @@ import { useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Navigation from "./components/Navigation";
 import Dashboard from "./pages/Dashboard";
-import Inbox from "./pages/Inbox";
 import Login from "./pages/Login";
 
 function App() {
@@ -31,7 +30,6 @@ function App() {
       <div style={{ marginTop: "70px" }}>
         <Routes>
           <Route path="/" element={<Dashboard usuario={usuario} />} />
-          <Route path="/inbox" element={<Inbox />} />
         </Routes>
       </div>
     </BrowserRouter>

@@ -19,7 +19,6 @@ function EncryptShare({ usuario }) {
   const loadUsers = async () => {
     try {
       const res = await getUsers();
-      // Filtrar al usuario actual y solo usuarios con clave pública
       const others = (res.data || []).filter(
         (u) => u.id !== usuario.id && (u.public_key || u.publicKey)
       );
@@ -80,7 +79,6 @@ function EncryptShare({ usuario }) {
     try {
       await sodium.ready;
 
-      // 1. Encriptar el archivo con ChaCha20-Poly1305 (genera llave simétrica)
       const fileBuffer = await fileToUint8Array(selectedFile);
       const { encrypted, key, nonce } = await encryptFile(
         fileBuffer,
@@ -88,10 +86,10 @@ function EncryptShare({ usuario }) {
         selectedFile.size
       );
 
-      // 2. Cifrar la llave simétrica con la clave pública de cada usuario seleccionado
       const keyBytes = sodium.from_hex(key);
       const shares = [];
 
+      // Cifrar la llave para cada destinatario seleccionado
       for (const userId of selectedUsers) {
         const user = users.find((u) => u.id === userId);
         if (!user?.public_key) {
@@ -99,19 +97,24 @@ function EncryptShare({ usuario }) {
           setLoading(false);
           return;
         }
-
         const recipientPubKey = sodium.from_hex(user.public_key);
-
-        // crypto_box_seal: cifrado anónimo con la clave pública del destinatario
         const encryptedKey = sodium.crypto_box_seal(keyBytes, recipientPubKey);
-
         shares.push({
           user_id: userId,
           encrypted_symmetric_key: sodium.to_hex(encryptedKey),
         });
       }
 
-      // 3. Enviar al backend
+      // Incluir al dueño para que pueda descifrar su propio archivo
+      if (usuario?.public_key) {
+        const ownerPubKey = sodium.from_hex(usuario.public_key);
+        const encryptedKey = sodium.crypto_box_seal(keyBytes, ownerPubKey);
+        shares.push({
+          user_id: usuario.id,
+          encrypted_symmetric_key: sodium.to_hex(encryptedKey),
+        });
+      }
+
       const formData = new FormData();
       formData.append("file", new Blob([encrypted]), selectedFile.name + ".encrypted");
       formData.append("filename", selectedFile.name);
@@ -140,7 +143,6 @@ function EncryptShare({ usuario }) {
       </div>
 
       <div className="share-panel-body">
-        {/* Zona de archivo */}
         <div
           className="share-drop-zone"
           onDragOver={handleDragOver}
@@ -170,13 +172,12 @@ function EncryptShare({ usuario }) {
           </label>
         </div>
 
-        {/* Selección de usuarios */}
         <div className="share-users-section">
           <h4>👥 Seleccionar destinatarios</h4>
           {loadingUsers ? (
             <p className="share-loading">Cargando usuarios…</p>
           ) : users.length === 0 ? (
-            <p className="share-empty">No hay usuarios con clave pública para compartir archivos</p>
+            <p className="share-empty">No hay otros usuarios con clave pública disponibles</p>
           ) : (
             <div className="share-users-list">
               {users.map((u) => (
@@ -199,7 +200,6 @@ function EncryptShare({ usuario }) {
           )}
         </div>
 
-        {/* Botón de acción */}
         <button
           className="share-btn-action"
           onClick={handleEncryptAndShare}
