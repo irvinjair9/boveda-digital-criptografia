@@ -24,6 +24,10 @@ public class UsersEntity {
     @JsonProperty("public_key")
     private String publicKey;
 
+    @Column(name = "signing_public_key", columnDefinition = "TEXT")
+    @JsonProperty("signing_public_key")
+    private String signingPublicKey;
+
     public Long getId() {
         return id;
     }
@@ -78,5 +82,13 @@ public class UsersEntity {
 
     public void setPublicKey(String publicKey) {
         this.publicKey = publicKey;
+    }
+
+    public String getSigningPublicKey() {
+        return signingPublicKey;
+    }
+
+    public void setSigningPublicKey(String signingPublicKey) {
+        this.signingPublicKey = signingPublicKey;
     }
 }

@@ -28,6 +28,7 @@ public class UsersController {
             userMap.put("name", user.getName());
             userMap.put("last_name", user.getLastName());
             userMap.put("public_key", user.getPublicKey());
+            userMap.put("signing_public_key", user.getSigningPublicKey());
             result.add(userMap);
         }
 

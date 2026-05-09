@@ -33,6 +33,7 @@ public class AuthController {
             userMap.put("email", user.get().getEmail());
             userMap.put("username", user.get().getUsername());
             userMap.put("public_key", user.get().getPublicKey());
+            userMap.put("signing_public_key", user.get().getSigningPublicKey());
 
             Map<String, Object> response = new HashMap<>();
             response.put("message", "Login exitoso");
@@ -59,6 +60,7 @@ public class AuthController {
         userMap.put("email", saved.getEmail());
         userMap.put("username", saved.getUsername());
         userMap.put("public_key", saved.getPublicKey());
+        userMap.put("signing_public_key", saved.getSigningPublicKey());
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "Usuario registrado exitosamente");

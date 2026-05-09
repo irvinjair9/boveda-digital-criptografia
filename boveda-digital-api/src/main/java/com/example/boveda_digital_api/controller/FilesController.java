@@ -35,9 +35,12 @@ public class FilesController {
             @RequestParam("filename") String filename,
             @RequestParam("owner_id") Long ownerId,
             @RequestParam("shares") String shares,
-            @RequestParam("iv") String iv) {
+            @RequestParam("iv") String iv,
+            @RequestParam(value = "signature", required = false) String signature,
+            @RequestParam(value = "signer_id", required = false) Long signerId,
+            @RequestParam(value = "signing_public_key", required = false) String signerSigningPublicKey) {
         try {
-            filesService.shareFile(file, filename, ownerId, shares, iv);
+            filesService.shareFile(file, filename, ownerId, shares, iv, signature, signerId, signerSigningPublicKey);
             return ResponseEntity.ok(Map.of("message", "Archivo compartido exitosamente"));
         } catch (Exception e) {
             logger.error("Error al compartir archivo", e);

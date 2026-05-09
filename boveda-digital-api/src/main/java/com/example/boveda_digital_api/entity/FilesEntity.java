@@ -25,6 +25,17 @@ public class FilesEntity {
 
     private String iv;
 
+    @Column(name = "signature", columnDefinition = "TEXT")
+    private String signature;
+
+    @Column(name = "signer_id")
+    @JsonProperty("signer_id")
+    private Long signerId;
+
+    @Column(name = "signer_signing_public_key", columnDefinition = "TEXT")
+    @JsonProperty("signer_signing_public_key")
+    private String signerSigningPublicKey;
+
     @Column(name = "created_at")
     @JsonProperty("created_at")
     private LocalDateTime createdAt;
@@ -48,6 +59,17 @@ public class FilesEntity {
 
     public String getIv() { return iv; }
     public void setIv(String iv) { this.iv = iv; }
+
+    public String getSignature() { return signature; }
+    public void setSignature(String signature) { this.signature = signature; }
+
+    public Long getSignerId() { return signerId; }
+    public void setSignerId(Long signerId) { this.signerId = signerId; }
+
+    public String getSignerSigningPublicKey() { return signerSigningPublicKey; }
+    public void setSignerSigningPublicKey(String signerSigningPublicKey) {
+        this.signerSigningPublicKey = signerSigningPublicKey;
+    }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class FilesService {
@@ -29,12 +30,24 @@ public class FilesService {
         this.objectMapper = new ObjectMapper();
     }
 
-    public void shareFile(MultipartFile file, String filename, Long ownerId, String sharesJson, String iv) throws IOException {
+    public void shareFile(
+            MultipartFile file,
+            String filename,
+            Long ownerId,
+            String sharesJson,
+            String iv,
+            String signature,
+            Long signerId,
+            String signerSigningPublicKey) throws IOException {
+
         FilesEntity filesEntity = new FilesEntity();
         filesEntity.setOwnerId(ownerId);
         filesEntity.setFilename(filename);
         filesEntity.setFileContent(file.getBytes());
         filesEntity.setIv(iv);
+        filesEntity.setSignature(signature);
+        filesEntity.setSignerId(signerId);
+        filesEntity.setSignerSigningPublicKey(signerSigningPublicKey);
         FilesEntity savedFile = filesDAO.save(filesEntity);
 
         List<Map<String, Object>> shares = objectMapper.readValue(sharesJson, new TypeReference<>() {});
@@ -58,13 +71,38 @@ public class FilesService {
             FilesEntity fileEntity = fileOpt.get();
             Optional<UsersEntity> ownerOpt = usersDAO.findById(fileEntity.getOwnerId());
 
+            // All shares for this file are needed by the recipient to verify the signature
+            List<FileSharesEntity> allFileShares = fileSharesDAO.findByFileId(fileEntity.getId());
+            List<Map<String, Object>> allSharesList = allFileShares.stream()
+                    .map(s -> {
+                        Map<String, Object> m = new HashMap<>();
+                        m.put("user_id", s.getUserId());
+                        m.put("encrypted_symmetric_key", s.getEncryptedSymmetricKey());
+                        return m;
+                    })
+                    .collect(Collectors.toList());
+
             Map<String, Object> item = new HashMap<>();
             item.put("file_id", fileEntity.getId());
             item.put("filename", fileEntity.getFilename());
             item.put("iv", fileEntity.getIv());
-            item.put("owner", ownerOpt.map(UsersEntity::getName).orElse("Desconocido"));
+            item.put("owner", ownerOpt.map(u ->
+                    u.getName() + (u.getLastName() != null ? " " + u.getLastName() : "")
+            ).orElse("Desconocido"));
             item.put("encrypted_symmetric_key", share.getEncryptedSymmetricKey());
             item.put("created_at", fileEntity.getCreatedAt());
+            item.put("signature", fileEntity.getSignature());
+            item.put("signer_id", fileEntity.getSignerId());
+            // Fetch the signer's public key from the users table (established at registration),
+            // not from the files table — the uploader must not control what key is used to verify them.
+            String signerPubKey = null;
+            if (fileEntity.getSignerId() != null) {
+                signerPubKey = usersDAO.findById(fileEntity.getSignerId())
+                        .map(UsersEntity::getSigningPublicKey)
+                        .orElse(null);
+            }
+            item.put("signer_signing_public_key", signerPubKey);
+            item.put("all_shares", allSharesList);
             result.add(item);
         }
 
