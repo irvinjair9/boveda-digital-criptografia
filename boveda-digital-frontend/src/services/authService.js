@@ -11,11 +11,11 @@ export async function login(username, password) {
 export async function register(userData) {
   const hashedPassword = await hashPassword(userData.password);
 
-  // Generar par de claves X25519
-  const { publicKeyHex, privateKey } = await generateKeyPair();
+  // Generate both keypairs: X25519 (encryption) + Ed25519 (signing)
+  const { publicKeyHex, signingPublicKeyHex, privateKey, signingPrivateKey } = await generateKeyPair();
 
-  // Cifrar la clave privada con la contraseña en claro (determinista)
-  const encryptedPrivateKey = await encryptPrivateKey(privateKey, userData.password);
+  // Encrypt both private keys into one combined file
+  const encryptedPrivateKey = await encryptPrivateKey(privateKey, signingPrivateKey, userData.password);
 
   const response = await api.post("/auth/register", {
     name: userData.name,
@@ -25,6 +25,7 @@ export async function register(userData) {
     email: userData.email,
     password: hashedPassword,
     public_key: publicKeyHex,
+    signing_public_key: signingPublicKeyHex,
   });
 
   return { ...response.data, encryptedPrivateKey };
