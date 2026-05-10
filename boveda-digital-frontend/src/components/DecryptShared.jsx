@@ -11,10 +11,9 @@ function DecryptShared({ usuario }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
-  // Estado para el flujo de desencriptación
   const [privateKeyFile, setPrivateKeyFile] = useState(null);
   const [password, setPassword] = useState("");
-  const [decrypting, setDecrypting] = useState(null); // id del archivo que se está desencriptando
+  const [decrypting, setDecrypting] = useState(null);
 
   useEffect(() => {
     loadSharedFiles();
@@ -66,17 +65,16 @@ function DecryptShared({ usuario }) {
     try {
       await sodium.ready;
 
-      // 1. Leer y descifrar la clave privada con la contraseña
+      // 1. Descifrar la clave privada con la contraseña
       const privKeyBuffer = await privateKeyFile.arrayBuffer();
       const encryptedPrivKey = new Uint8Array(privKeyBuffer);
       const privateKey = await decryptPrivateKey(encryptedPrivKey, password);
 
       // 2. Descifrar la llave simétrica con crypto_box_seal_open
-      //    Necesitamos la clave pública del propio usuario
       const publicKey = sodium.from_hex(usuario.public_key);
       const encryptedSymKey = sodium.from_hex(sharedFile.encrypted_symmetric_key);
-
       const symmetricKey = sodium.crypto_box_seal_open(encryptedSymKey, publicKey, privateKey);
+
       if (!symmetricKey) {
         setMessage("❌ No se pudo descifrar la llave simétrica. Clave privada incorrecta.");
         setDecrypting(null);
@@ -87,30 +85,27 @@ function DecryptShared({ usuario }) {
       const fileRes = await downloadSharedFile(sharedFile.file_id);
       const encryptedFileBuffer = new Uint8Array(fileRes.data);
 
-      // 4. Descifrar el archivo con la llave simétrica
+      // 4. Descifrar el archivo con ChaCha20-Poly1305
       const symKeyHex = sodium.to_hex(symmetricKey);
-      const { data: decryptedData, metadata } = await decryptFile(
-        encryptedFileBuffer,
-        symKeyHex
-      );
+      const { data: decryptedData, metadata } = await decryptFile(encryptedFileBuffer, symKeyHex);
 
-      // 5. Descargar automáticamente
+      // 5. Descargar el archivo descifrado
       const originalName = metadata?.fileName || sharedFile.filename || "archivo_descifrado";
       const blob = new Blob([decryptedData]);
       downloadBlob(blob, originalName);
 
-      setMessage(`✅ Archivo "${originalName}" descifrado y descargado`);
+      setMessage(`✅ "${originalName}" descifrado y descargado`);
     } catch (err) {
-      console.log("ERROR_REAL_DECRYPT:", err);
+      console.error("ERROR_DECRYPT:", err);
 
       await sendErrorLog({
         module: "DecryptShared.handleDecrypt",
         publicMessage: "DECRYPT_FAILED: archivo o credenciales inválidas",
         internalReason: err?.message || "UNKNOWN_ERROR",
-        details: String(err)
+        details: String(err),
       });
 
-      setMessage("❌ DECRYPT_FAILED: archivo o credenciales inválidas");
+      setMessage("❌ No se pudo descifrar. Verifica tu clave privada y contraseña.");
     } finally {
       setDecrypting(null);
     }
@@ -125,7 +120,6 @@ function DecryptShared({ usuario }) {
       </div>
 
       <div className="share-panel-body">
-        {/* Subir clave privada + contraseña */}
         <div className="decrypt-key-section">
           <h4>🔑 Tu clave privada</h4>
           <div className="decrypt-key-row">
@@ -156,7 +150,6 @@ function DecryptShared({ usuario }) {
           </div>
         </div>
 
-        {/* Lista de archivos compartidos */}
         <div className="shared-files-section">
           <h4>📂 Archivos disponibles</h4>
           {loading ? (
@@ -169,8 +162,8 @@ function DecryptShared({ usuario }) {
                 <div key={sf.file_id} className="shared-file-item">
                   <div className="shared-file-info">
                     <span className="shared-file-name">📄 {sf.filename}</span>
-                    {sf.owner_name && (
-                      <span className="shared-file-owner">de {sf.owner_name}</span>
+                    {sf.owner && (
+                      <span className="shared-file-owner">de {sf.owner}</span>
                     )}
                   </div>
                   <div className="shared-file-actions">

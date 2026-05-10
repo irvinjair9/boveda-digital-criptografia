@@ -1,35 +1,10 @@
 import api from "./api";
 
-export const uploadFile = async (formData) => {
-  return api.post("/files/upload", formData);
-};
+export const getUsers = async () => api.get("/users");
 
-export const getInbox = async () => {
-  return api.get("/files/inbox");
-};
+export const uploadSharedFile = async (formData) => api.post("/files/share", formData);
 
-export const downloadFile = async (id) => {
-  return api.get(`/files/${id}`);
-};
+export const getSharedWithMe = async (userId) => api.get(`/files/shared/${userId}`);
 
-// --- Endpoints para compartición de archivos ---
-
-/** Listar usuarios registrados (para seleccionar destinatarios) */
-export const getUsers = async () => {
-  return api.get("/users");
-};
-
-/** Subir archivo cifrado con llaves simétricas cifradas por usuario */
-export const uploadSharedFile = async (formData) => {
-  return api.post("/files/share", formData);
-};
-
-/** Listar archivos compartidos conmigo */
-export const getSharedWithMe = async (userId) => {
-  return api.get(`/files/shared/${userId}`);
-};
-
-/** Descargar un archivo compartido (obtiene el blob cifrado) */
-export const downloadSharedFile = async (fileId) => {
-  return api.get(`/files/shared/download/${fileId}`, { responseType: "arraybuffer" });
-};
+export const downloadSharedFile = async (fileId) =>
+  api.get(`/files/shared/download/${fileId}`, { responseType: "arraybuffer" });

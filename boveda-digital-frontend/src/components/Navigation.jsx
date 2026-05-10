@@ -9,16 +9,6 @@ function Navigation({ usuario, onLogout }) {
           🔐 Bóveda Digital
         </Link>
         <ul className="nav-menu">
-          <li className="nav-item">
-            <Link to="/" className="nav-link">
-              🔐 Encriptar
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link to="/inbox" className="nav-link">
-              📬 Bandeja
-            </Link>
-          </li>
           <li className="nav-item nav-user">
             <span className="nav-username">👤 {usuario?.username}</span>
             <button className="nav-logout" onClick={onLogout}>
