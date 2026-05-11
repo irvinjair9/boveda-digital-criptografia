@@ -412,3 +412,150 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Signature badge button (🔏 / ⚠️) */
+.shared-file-sig-btn {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  background: #f8f9fa;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.shared-file-sig-btn:hover {
+  background: #e9ecef;
+}
+
+/* Signature details panel */
+.sig-panel {
+  width: 100%;
+  background: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sig-panel-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.sig-label {
+  color: #888;
+  min-width: 80px;
+  font-weight: 600;
+}
+
+.sig-value {
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sig-hex {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #555;
+  word-break: break-all;
+}
+
+.sig-verify-btn {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: all 0.2s;
+}
+
+.sig-verify-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(102, 126, 234, 0.35);
+}
+
+.sig-verify-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Signature status badges */
+.sig-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sig-valid   { background: #d4edda; color: #155724; }
+.sig-invalid { background: #f8d7da; color: #721c24; }
+.sig-unsigned { background: #fff3cd; color: #856404; }
+.sig-loading { background: #e9ecef; color: #555; }
+
+/* shared-file-item becomes column when sig panel is open */
+.shared-file-item {
+  flex-wrap: wrap;
+}
+
+/* Manual public key input inside sig panel */
+.sig-pubkey-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+
+.sig-pubkey-input {
+  font-family: monospace;
+  font-size: 0.78rem;
+  padding: 0.45rem 0.7rem;
+  border: 1.5px solid #dee2e6;
+  border-radius: 6px;
+  width: 100%;
+  color: #333;
+  background: #fff;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.sig-pubkey-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.sig-pubkey-hint {
+  color: #999;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Copy public key button in user list */
+.copy-key-btn {
+  margin-left: auto;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: #f8f9fa;
+  color: #555;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.copy-key-btn:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+}
