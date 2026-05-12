@@ -412,7 +412,151 @@ Si se usa la **misma clave** con el **mismo nonce** dos veces:
 
 3. **Almacenamiento**:
    - Archivos `.encrypted` + claveson seguros en internet
-   - Sin clave, el archivo es matemáticamente inutilizable  
+   - Sin clave, el archivo es matemáticamente inutilizable
+
+# Diseño de Firma Digital — Bóveda Digital
+
+## Algoritmo elegido: Ed25519
+
+El sistema utiliza **Ed25519** (Edwards-curve Digital Signature Algorithm sobre Curve25519) implementado a través de [libsodium-wrappers](https://github.com/jedisct1/libsodium.js).
+
+Ed25519 fue elegido por las siguientes razones:
+
+- **Ya disponible** — libsodium es una dependencia existente del proyecto (usada para cifrado ChaCha20-Poly1305 y envoltura de claves X25519). No se requieren bibliotecas adicionales.
+- **Rápido y compacto** — Ed25519 produce firmas de 64 bytes y las verifica en microsegundos, incluso en el navegador.
+- **Seguridad robusta** — Nivel de seguridad de 128 bits, resistente a ataques de canal lateral y no depende de un nonce aleatorio en el momento de firmar (a diferencia de ECDSA), lo que elimina toda una clase de vulnerabilidades.
+- **Separación de responsabilidades** — Las claves de firma Ed25519 se generan de forma independiente a las claves de cifrado X25519 ya existentes en el sistema. Usar pares de claves separados para operaciones distintas (firmar vs. cifrar) es una práctica criptográfica establecida.
+
+Cada usuario tiene dos pares de claves:
+
+| Par de claves | Algoritmo | Propósito |
+|---------------|-----------|-----------|
+| X25519 | Curve25519 | Envolver la clave simétrica del archivo por destinatario (`crypto_box_seal`) |
+| Ed25519 | Edwards25519 | Firmar y verificar contenedores cifrados |
+
+Ambas claves privadas se almacenan juntas en un único archivo cifrado (`username_private_key.encrypted`) que se descarga al registrarse, usando el formato combinado BOV2 protegido con XSalsa20-Poly1305.
+
+---
+
+## Qué datos se firman
+
+La firma cubre el **contenedor cifrado completo** más la **lista de destinatarios**:
+
+```
+payload_firmado = SHA-512(encryptedFileBytes || canonicalize(sortedShares))
+```
+
+Donde:
+
+- **`encryptedFileBytes`** — el blob cifrado completo producido por `encryptFile()`, con la siguiente estructura interna:
+
+  ```
+  [ 4 bytes: longitud del header ]
+  [ N bytes: JSON de metadata (AAD) — algorithm, createdAt, fileName, fileSize, version ]
+  [ 12 bytes: nonce ChaCha20 ]
+  [ M bytes: ciphertext + 16 bytes tag Poly1305 ]
+  ```
+
+  Firmar el blob completo significa que la firma cubre implícitamente el ciphertext, el nonce y la metadata autenticada en un solo compromiso.
+
+- **`sortedShares`** — la lista completa de destinatarios, serializada como JSON canónico (RFC 8785) y ordenada por `user_id` de forma ascendente:
+
+  ```json
+  [
+    { "encrypted_symmetric_key": "...", "user_id": 1 },
+    { "encrypted_symmetric_key": "...", "user_id": 2 }
+  ]
+  ```
+
+  El ordenamiento garantiza determinismo: la misma lista de destinatarios siempre produce los mismos bytes sin importar el orden de inserción.
+
+La firma se almacena en la columna `files.signature` (codificada en hex, 128 caracteres). El firmante se identifica mediante `files.signer_id`, que se usa al momento de verificar para consultar la `signing_public_key` del firmante desde la tabla `users`.
+
+---
+
+## Por qué se requiere un hash antes de firmar
+
+Ed25519 aplica SHA-512 internamente al mensaje antes de calcular la firma. Sin embargo, el sistema aplica un paso explícito de **pre-hash SHA-512** por las siguientes razones:
+
+```
+hash = SHA-512(encryptedFileBytes || canonicalize(sortedShares))
+firma = Ed25519_sign(hash, signingPrivateKey)
+```
+
+1. **Entrada de tamaño fijo** — Sin importar qué tan grande sea el archivo cifrado, la entrada al primitivo de firma siempre son exactamente 64 bytes (el digest SHA-512). Esto hace que el paso de firma sea O(1) en tiempo y memoria respecto al tamaño del archivo, comprometiendo aun así cada bit del contenido.
+
+2. **Compromiso explícito de dominio** — Al concatenar los bytes del archivo y el JSON canónico de destinatarios antes de hashear, un único digest vincula ambas estructuras de datos de forma inseparable. Es computacionalmente inviable encontrar dos pares `(archivo, destinatarios)` distintos que produzcan el mismo hash.
+
+3. **Claridad y auditabilidad** — Hacer el paso de hash explícito en el código (`sodium.crypto_hash(combined)`) hace visible y revisable el contrato de firma, en lugar de depender del comportamiento implícito dentro de la implementación de Ed25519.
+
+---
+
+## Decisiones de seguridad
+
+### ¿Por qué firmar el ciphertext y no el plaintext?
+
+La firma se calcula sobre el **ciphertext cifrado**, no sobre el contenido original del archivo. Esto es un diseño de seguridad deliberado:
+
+1. **El firmante nunca expone el plaintext para firmarlo.** El cifrado ocurre completamente del lado del cliente en el navegador. Si firmar requiriera el plaintext, el paso de firma tendría que ocurrir antes del cifrado, lo que significaría que el plaintext debe permanecer disponible más tiempo del necesario. Firmar el ciphertext permite descartar el plaintext inmediatamente después del cifrado.
+
+2. **La verificación es posible sin descifrar.** Un destinatario puede verificar la autenticidad e integridad de un archivo antes de invertir esfuerzo en descifrarlo. Si la firma es inválida, el descifrado se rechaza inmediatamente — ninguna clave simétrica se aplica sobre un archivo adulterado.
+
+3. **Encrypt-then-Sign es el orden seguro.** La composición segura establecida es: Cifrar → Firmar. Firmar el plaintext primero (Sign-then-Encrypt) permite a un atacante que pueda descifrar eliminar la firma y volver a firmar con su propia clave, suplantando al remitente original. Firmar el ciphertext evita esto porque la firma está vinculada a la salida cifrada específica, no al contenido en claro.
+
+4. **Una clave simétrica comprometida no rompe la autenticidad.** Incluso si un atacante obtuviera la clave simétrica del archivo y pudiera descifrarlo, no podría producir una firma válida sobre contenido modificado sin la clave privada Ed25519 del firmante. Las dos propiedades de seguridad — confidencialidad y autenticidad — están protegidas por material de clave independiente.
+
+---
+
+### ¿Qué ocurre si la firma no se verifica primero?
+
+Si un destinatario descifra un archivo sin verificar la firma primero, los siguientes ataques se vuelven posibles:
+
+| Ataque | Consecuencia |
+|--------|-------------|
+| **Modificación del ciphertext** | ChaCha20-Poly1305 detectará cambios aleatorios de bits mediante su MAC Poly1305 y lanzará un error de descifrado. Sin embargo, un atacante sofisticado que conozca la clave simétrica podría producir un ciphertext válidamente autenticado con contenido diferente. |
+| **Sustitución de metadata** | El contenedor incluye metadata (nombre de archivo, algoritmo, versión) como AAD. Un atacante podría reemplazar el contenedor completo por un archivo diferente cifrado con la misma clave simétrica. Sin verificación de firma, el destinatario no tiene forma de saber que el archivo provino del remitente declarado. |
+| **Suplantación de identidad** | Cualquier parte que obtenga la clave simétrica (por ejemplo, un servidor malicioso) podría cifrar contenido arbitrario, subirlo, y el destinatario lo descifraría creyendo que provino del remitente legítimo. |
+| **Manipulación de destinatarios** | Sin verificación de firma, un atacante con acceso al servidor podría alterar los registros de `file_shares` — añadiendo destinatarios no autorizados o eliminando legítimos — sin conocimiento del remitente. |
+
+El flujo correcto que impone este sistema es:
+
+```
+Descargar archivo cifrado
+        ↓
+Verificar firma Ed25519  ──→  INVÁLIDA: rechazar, registrar error, no descifrar
+        ↓ VÁLIDA
+Descifrar clave simétrica (X25519)
+        ↓
+Descifrar archivo (ChaCha20-Poly1305)
+        ↓
+Entregar plaintext al usuario
+```
+
+Omitir el paso de verificación colapsa la capa de autenticación por completo, reduciendo el sistema a solo confidencialidad — lo cual es insuficiente para un sistema de compartición de archivos donde el origen importa.
+
+---
+
+### ¿Qué ocurre si la metadata se excluye de la firma?
+
+El payload firmado incluye explícitamente la metadata porque excluirla abre varios ataques:
+
+**1. Sustitución del nombre de archivo**
+La metadata contiene el `fileName` original. Si la metadata fuera excluida de la firma, un atacante podría cambiar el campo de nombre de archivo en el header del contenedor (que está en plaintext como AAD) sin invalidar la firma. El destinatario vería el contenido correcto del archivo pero con un nombre engañoso — suficiente para causar confusión o ingeniería social en un contexto de compartición de documentos.
+
+**2. Degradación del algoritmo**
+La metadata incluye el campo `algorithm` (`"ChaCha20-Poly1305"`). Si fuera excluida, un atacante podría reemplazarlo con un identificador de algoritmo más débil. Un cliente futuro que confiara en ese campo podría ser engañado para usar una ruta de descifrado más débil.
+
+**3. Manipulación de la marca de tiempo**
+El campo `createdAt` forma parte de la metadata. Excluirlo permite a un atacante alterar la fecha de creación aparente de un archivo sin romper la firma — útil para falsificación en contextos legales o de auditoría.
+
+**4. Retroceso de versión**
+El campo `version` en la metadata permite que el sistema evolucione su formato. Si fuera excluido de la firma, un atacante podría degradar un contenedor a una versión anterior que un cliente maneje de forma diferente, potencialmente explotando diferencias en el parseo.
+
+**5. Autenticación parcial**
+ChaCha20-Poly1305 ya autentica la metadata como AAD — lo que significa que la metadata no puede ser alterada sin romper el descifrado. Sin embargo, el MAC Poly1305 está ligado a la clave simétrica, no a la identidad del remitente. Incluir la metadata en la firma Ed25519 extiende la garantía de identidad a la metadata: demuestra no solo que la metadata está intacta, sino que fue establecida por el firmante específico.
+
+En resumen, excluir la metadata de la firma significaría que la firma solo autentica los bytes del ciphertext, dejando las partes visibles en plaintext del contenedor (nombre de archivo, algoritmo, marcas de tiempo) sin vinculación a la identidad del firmante.
+  
 
 ## 📦 Dependencias Principales
 
