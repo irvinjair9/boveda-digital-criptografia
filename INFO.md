@@ -392,3 +392,27 @@ El sistema gestiona **tres tipos de claves** con ciclos de vida distintos:
 | Pública X25519 | BD del servidor (`users` table) | `user_id` |
 | Privada X25519 | Archivo local del usuario (`.encrypted`) | Gestión manual del usuario |
 | Derivada de password | Solo RAM del navegador | Implícita (se recalcula cada vez) |
+
+
+---
+
+## D5 — Key Management (Gestión de Claves)
+
+### 1. Función de derivación de claves (KDF): Argon2id
+El sistema implementa **Argon2id (RFC 9106)** para transformar la contraseña del usuario en una clave de 32 bytes robusta.
+
+* **¿Por qué no BLAKE2b?** A diferencia de BLAKE2b (que es un hash rápido), Argon2id es una KDF diseñada para ser costosa en memoria y tiempo, mitigando ataques de fuerza bruta por GPU/ASIC.
+* **Parámetros:** 2 iteraciones (`opslimit`), 64 MiB de RAM (`memlimit`) y salt de 16 bytes.
+
+### 2. Formato de Contenedor de Claves (BOV3)
+Las claves privadas se exportan en un formato binario propio que garantiza la integridad de las llaves del usuario:
+
+
+| Magic (4B) | Salt (16B) | Nonce (24B) | Ciphertext (N bytes) |
+|---|---|---|---|
+| `BOV3` | Para Argon2id | Para XSalsa20 | JSON cifrado con claves priv. |
+
+### 3. Ciclo de Vida y Responsabilidad
+* **Generación:** Ocurre 100% en el cliente mediante `libsodium` (CSPRNG).
+* **Almacenamiento:** Modelo **Zero-Knowledge**. El servidor no tiene copia del archivo `.encrypted` ni de la contraseña.
+* **Compromiso:** Ante sospecha de robo, se requiere la creación de una identidad nueva, ya que no existe un esquema de revocación centralizado.
