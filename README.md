@@ -556,7 +556,46 @@ El campo `version` en la metadata permite que el sistema evolucione su formato. 
 ChaCha20-Poly1305 ya autentica la metadata como AAD — lo que significa que la metadata no puede ser alterada sin romper el descifrado. Sin embargo, el MAC Poly1305 está ligado a la clave simétrica, no a la identidad del remitente. Incluir la metadata en la firma Ed25519 extiende la garantía de identidad a la metadata: demuestra no solo que la metadata está intacta, sino que fue establecida por el firmante específico.
 
 En resumen, excluir la metadata de la firma significaría que la firma solo autentica los bytes del ciphertext, dejando las partes visibles en plaintext del contenedor (nombre de archivo, algoritmo, marcas de tiempo) sin vinculación a la identidad del firmante.
-  
+
+
+---
+
+## 🔑 Gestión de Claves — Actividad D5
+
+Esta sección detalla la implementación de la capa de protección de identidad y el manejo del ciclo de vida de las claves criptográficas en la versión **BOV3**.
+
+### 🛡️ Protección de la Clave Privada: Argon2id
+Para la derivación de claves a partir de la contraseña del usuario, el sistema ha migrado de un hash simple (BLAKE2b) a **Argon2id (RFC 9106)**.
+
+* **Resistencia a Fuerza Bruta**: Argon2id está diseñado para ser costoso en memoria y tiempo (`64 MiB` de RAM y `2 iteraciones`), lo que hace inviable el uso de hardware especializado (GPUs/ASICs) para ataques de diccionario.
+* **Salting Aleatorio**: Se utiliza un salt de 16 bytes único por cada archivo de claves, impidiendo ataques de tablas precalculadas (Rainbow Tables).
+* **Implementación**: Se utiliza la versión WebAssembly de `libsodium-wrappers` para asegurar que el proceso sea constante en tiempo y resistente a ataques de canal lateral.
+
+### 📂 Formato de Contenedor de Claves (BOV3)
+Las llaves privadas (X25519 y Ed25519) se exportan en un contenedor binario propietario con el marcador `BOV3`. El flujo de protección es el siguiente:
+1. **Derivación**: Contraseña + Salt → Clave de 256 bits (Argon2id).
+2. **Cifrado**: Claves Privadas → XSalsa20-Poly1305 (Cifrado autenticado).
+3. **Persistencia**: El resultado se descarga como un archivo `.encrypted` que el usuario debe gestionar localmente.
+
+### ⚠️ Modelo Zero-Knowledge y Responsabilidades
+El diseño del sistema impone una frontera de confianza donde el servidor es **completamente ciego** a la identidad privada del usuario:
+
+* **Almacenamiento Local**: La aplicación **no guarda copias** de las llaves ni de la contraseña en el servidor.
+* **Regla 3-2-1 de Backup**: Se instruye al usuario a mantener 3 copias del archivo de llaves en al menos 2 medios distintos.
+* **Irrecuperabilidad**: La pérdida de la contraseña maestra o del archivo `.encrypted` resulta en la pérdida total y permanente de los archivos compartidos, ya que no existe un mecanismo de recuperación centralizado.
+
+### 📈 Evolución del Modelo de Amenazas (D5)
+
+| Amenaza | Mitigación en D5 | Estado |
+| :--- | :--- | :--- |
+| **Robo de base de datos** | Las claves privadas nunca tocan el servidor; el atacante solo obtiene claves públicas. | ✅ Protegido |
+| **Brute-force al KeyStore** | Argon2id impone un retraso de ~1s por intento, haciendo el ataque computacionalmente prohibitivo. | ✅ Protegido |
+| **Compromiso de Llave** | Se requiere rotación manual (creación de nueva identidad) al no haber esquema de revocación. | ⚠️ Manual |
+| **Suplantación de Identidad** | Las firmas Ed25519 vinculan el archivo a la identidad del emisor de forma matemática. | ✅ Protegido |
+
+> **Nota técnica**: Para consultar la especificación exacta de los bytes del contenedor, los parámetros de KDF y el análisis detallado de riesgos, refiérase al documento de arquitectura [INFO.md](./INFO.md).
+
+
 
 ## 📦 Dependencias Principales
 
