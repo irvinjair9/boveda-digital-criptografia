@@ -560,42 +560,171 @@ En resumen, excluir la metadata de la firma significaría que la firma solo aute
 
 ---
 
-## 🔑 Gestión de Claves — Actividad D5
+## 🔑 Gestión de Claves — Actividad D6
 
-Esta sección detalla la implementación de la capa de protección de identidad y el manejo del ciclo de vida de las claves criptográficas en la versión **BOV3**.
+## 1. Función de derivación de claves (KDF)
 
-### 🛡️ Protección de la Clave Privada: Argon2id
-Para la derivación de claves a partir de la contraseña del usuario, el sistema ha migrado de un hash simple (BLAKE2b) a **Argon2id (RFC 9106)**.
+### Algoritmo: Argon2id
 
-* **Resistencia a Fuerza Bruta**: Argon2id está diseñado para ser costoso en memoria y tiempo (`64 MiB` de RAM y `2 iteraciones`), lo que hace inviable el uso de hardware especializado (GPUs/ASICs) para ataques de diccionario.
-* **Salting Aleatorio**: Se utiliza un salt de 16 bytes único por cada archivo de claves, impidiendo ataques de tablas precalculadas (Rainbow Tables).
-* **Implementación**: Se utiliza la versión WebAssembly de `libsodium-wrappers` para asegurar que el proceso sea constante en tiempo y resistente a ataques de canal lateral.
+La contraseña del usuario **nunca se usa directamente** como clave criptográfica. En su lugar, se pasa por Argon2id (RFC 9106) para producir una clave simétrica de 32 bytes.
 
-### 📂 Formato de Contenedor de Claves (BOV3)
-Las llaves privadas (X25519 y Ed25519) se exportan en un contenedor binario propietario con el marcador `BOV3`. El flujo de protección es el siguiente:
-1. **Derivación**: Contraseña + Salt → Clave de 256 bits (Argon2id).
-2. **Cifrado**: Claves Privadas → XSalsa20-Poly1305 (Cifrado autenticado).
-3. **Persistencia**: El resultado se descarga como un archivo `.encrypted` que el usuario debe gestionar localmente.
+| Parámetro | Valor | Propósito |
+|-----------|-------|-----------|
+| Algoritmo | Argon2id | Resistente a ataques de GPU y FPGA; combina Argon2i (ataques de canal lateral) y Argon2d (ataques de time-memory tradeoff) |
+| `opslimit` | 2 (`INTERACTIVE`) | Número de iteraciones; ~1 s en hardware moderno |
+| `memlimit` | 64 MiB (`INTERACTIVE`) | Memoria requerida; aumenta el costo de ataques en paralelo |
+| Salt | 16 bytes aleatorios | Generados con `randombytes_buf` en cada cifrado; impiden ataques con tablas rainbow |
+| Longitud de salida | 32 bytes | Clave simétrica para XSalsa20-Poly1305 |
 
-### ⚠️ Modelo Zero-Knowledge y Responsabilidades
-El diseño del sistema impone una frontera de confianza donde el servidor es **completamente ciego** a la identidad privada del usuario:
+**Implementación**: `sodium.crypto_pwhash` de libsodium-wrappers (versión WASM del algoritmo oficial).
 
-* **Almacenamiento Local**: La aplicación **no guarda copias** de las llaves ni de la contraseña en el servidor.
-* **Regla 3-2-1 de Backup**: Se instruye al usuario a mantener 3 copias del archivo de llaves en al menos 2 medios distintos.
-* **Irrecuperabilidad**: La pérdida de la contraseña maestra o del archivo `.encrypted` resulta en la pérdida total y permanente de los archivos compartidos, ya que no existe un mecanismo de recuperación centralizado.
+### Por qué no BLAKE2b
 
-### 📈 Evolución del Modelo de Amenazas (D5)
+La versión anterior (BOV2) usaba `crypto_generichash` (BLAKE2b) para derivar la clave. BLAKE2b es una función de hash criptográfica de propósito general — rápida por diseño — lo que la hace inadecuada como KDF:
 
-| Amenaza | Mitigación en D5 | Estado |
-| :--- | :--- | :--- |
-| **Robo de base de datos** | Las claves privadas nunca tocan el servidor; el atacante solo obtiene claves públicas. | ✅ Protegido |
-| **Brute-force al KeyStore** | Argon2id impone un retraso de ~1s por intento, haciendo el ataque computacionalmente prohibitivo. | ✅ Protegido |
-| **Compromiso de Llave** | Se requiere rotación manual (creación de nueva identidad) al no haber esquema de revocación. | ⚠️ Manual |
-| **Suplantación de Identidad** | Las firmas Ed25519 vinculan el archivo a la identidad del emisor de forma matemática. | ✅ Protegido |
+- Sin salt → ataques con tablas precalculadas posibles.
+- Sin iteraciones → un atacante puede probar millones de contraseñas por segundo en GPU.
+- Argon2id resuelve ambos problemas.
 
-> **Nota técnica**: Para consultar la especificación exacta de los bytes del contenedor, los parámetros de KDF y el análisis detallado de riesgos, refiérase al documento de arquitectura [INFO.md](./INFO.md).
+---
 
+## 2. Formato del archivo de claves privadas
 
+El archivo descargado al crear cuenta (`.encrypted`) contiene **ambas claves privadas** (X25519 para cifrado + Ed25519 para firma) en un único contenedor cifrado.
+
+### Formato actual — BOV3
+
+```
+┌────────────────────────────────────────────────────────┐
+│  4 bytes  │  "BOV3" (magic marker)                     │
+│ 16 bytes  │  Salt Argon2id (aleatorio)                 │
+│ 24 bytes  │  Nonce XSalsa20-Poly1305 (aleatorio)       │
+│  N bytes  │  Ciphertext + MAC de 16 bytes              │
+│           │  (JSON: {"ed25519":"<hex>","x25519":"<hex>"}│
+└────────────────────────────────────────────────────────┘
+```
+
+El JSON interior contiene las dos claves privadas en hexadecimal. El cifrado usa XSalsa20-Poly1305 (`crypto_secretbox_easy`) con la clave derivada por Argon2id.
+
+### Formatos legados soportados (solo lectura)
+
+| Magic | Descripción | KDF | Estado |
+|-------|-------------|-----|--------|
+| `BOV3` | Argon2id + salt aleatorio | Argon2id | Actual |
+| `BOV2` | BLAKE2b sin salt | BLAKE2b | Obsoleto — aún descifrable |
+| *(sin magic)* | Solo clave X25519 | BLAKE2b | Legado — sin clave Ed25519 |
+
+Los archivos BOV2 y legados se descifran correctamente pero el sistema advierte al usuario que la cuenta es antigua y no puede firmar.
+
+---
+
+## 3. Generación de claves
+
+Al registrar una cuenta se generan dos pares de claves independientes:
+
+| Par | Algoritmo | Uso |
+|-----|-----------|-----|
+| X25519 | `crypto_box_keypair` | Cifrado de clave simétrica (`crypto_box_seal`) |
+| Ed25519 | `crypto_sign_keypair` | Firma digital de contenedores cifrados |
+
+Las claves públicas se almacenan en la base de datos. Las privadas **nunca salen del dispositivo del usuario** en texto plano — solo viajan cifradas en el archivo `.encrypted`.
+
+---
+
+## 4. Almacenamiento y copia de seguridad
+
+### Responsabilidad del usuario
+
+El archivo `.encrypted` es descargado una sola vez al registrarse. La aplicación **no guarda copias** de las claves privadas en el servidor. El usuario es responsable de:
+
+1. Guardar el archivo en un lugar seguro (nube personal, gestor de contraseñas, USB cifrado).
+2. Recordar la contraseña usada al registrarse — sin ella, el archivo no puede descifrarse.
+3. Crear copias de seguridad en ubicaciones distintas (regla 3-2-1: 3 copias, 2 medios, 1 fuera de casa).
+
+### Verificación de copia de seguridad
+
+Para verificar que la copia funciona: ir a "Descifrar Archivo", cargar la copia del archivo `.encrypted` e intentar descifrar cualquier archivo compartido con la contraseña. Si el descifrado falla, la copia está corrupta.
+
+---
+
+## 5. Ciclo de vida de las claves
+
+### Generación
+Claves generadas en el navegador con `libsodium-wrappers` (CSPRNG del sistema operativo a través de `randombytes_buf`). Nunca se transmiten al servidor sin cifrar.
+
+### Uso
+- **Cifrado**: La clave pública X25519 del destinatario cifra la clave simétrica del archivo.
+- **Descifrado**: La clave privada X25519 del receptor descifra la clave simétrica.
+- **Firma**: La clave privada Ed25519 del emisor firma el contenedor.
+- **Verificación**: La clave pública Ed25519 del firmante (almacenada en la BD) verifica la firma.
+
+### Rotación
+El sistema no implementa rotación automática. Para rotar claves:
+
+1. El usuario crea una cuenta nueva con nuevas claves.
+2. Los archivos previamente compartidos con la cuenta antigua solo pueden descifrarse con el archivo de claves antiguo.
+3. Los nuevos archivos se cifran con las nuevas claves públicas.
+
+> **Nota**: La rotación de claves es un área de mejora futura. Se recomienda rotar si el archivo `.encrypted` o la contraseña pudiera estar comprometida.
+
+### Compromiso de claves
+
+Si el usuario sospecha que su archivo `.encrypted` o su contraseña fue comprometido:
+
+1. Crear una cuenta nueva (nuevas claves generadas automáticamente).
+2. Avisar a los contactos para que re-compartan los archivos con la nueva cuenta.
+3. No existe mecanismo de revocación automática en la versión actual.
+
+### Expiración
+
+No hay expiración automática. Las claves son válidas indefinidamente hasta que el usuario las reemplace creando una cuenta nueva.
+
+---
+
+## 6. Modelo de amenazas
+
+| Amenaza | Mitigación |
+|---------|------------|
+| Servidor comprometido | Las claves privadas nunca se almacenan en el servidor. Un atacante con acceso total a la BD solo obtiene claves públicas y archivos cifrados. |
+| Keystore robado (sin contraseña) | Argon2id hace inviable el brute-force: ~1 s/intento en hardware estándar. Un diccionario de 1 millón de contraseñas tomaría ~11 días en una sola máquina. |
+| Contraseña débil | El sistema no impone complejidad mínima actualmente. Responsabilidad del usuario. Con contraseña débil, Argon2id reduce pero no elimina el riesgo. |
+| Intercepción en tránsito | HTTPS/TLS protege la comunicación. Las claves privadas nunca se transmiten. |
+| Firma forjada | Ed25519 es un esquema de firma con seguridad de 128 bits. La clave de verificación se obtiene de la BD (`users.signing_public_key`), no del archivo subido por el firmante. |
+| Clave pública falsa en BD | Fuera del alcance del modelo actual. Requeriría certificados PKI o web of trust. |
+| Archivos cifrados con clave pública X25519 antigua | Si el usuario pierde su clave privada, los archivos cifrados para él son irrecuperables — propiedad de forward secrecy parcial. |
+
+---
+
+## 7. Parámetros Argon2id: razonamiento
+
+Los parámetros `OPSLIMIT_INTERACTIVE` / `MEMLIMIT_INTERACTIVE` de libsodium están calibrados para autenticación interactiva donde el usuario espera ~1 segundo. Para almacenamiento de claves (operación infrecuente) podrían usarse valores más altos (`SENSITIVE`), pero se optó por `INTERACTIVE` para no degradar la experiencia en dispositivos móviles de gama baja.
+
+Si se requiere mayor seguridad en el futuro, los parámetros están centralizados en las constantes `ARGON2_OPSLIMIT` y `ARGON2_MEMLIMIT` en `keyPair.js`.
+
+---
+
+## 8. Preguntas
+
+### • ¿Por qué cifrar las claves privadas?
+
+Las claves privadas (X25519 y Ed25519) son el núcleo de toda la seguridad del sistema. Si un atacante obtiene acceso a ellas en texto plano, podría suplantar la identidad del usuario, firmar contenedores falsos y descifrar absolutamente todos los archivos dirigidos a esa cuenta. 
+
+Dado que el archivo `.encrypted` se almacena localmente en el dispositivo del usuario —un entorno que puede estar expuesto a malware, accesos físicos no autorizados o filtraciones al subirse a nubes comerciales—, **es obligatorio cifrarlas**. Al aplicar el cifrado simétrico con XSalsa20-Poly1305, transformamos el archivo en un contenedor seguro que solo el dueño legítimo puede abrir mediante el conocimiento de su contraseña, garantizando que las claves nunca residan en el disco en un formato legible.
+
+### • ¿Qué pasa si la contraseña es débil?
+
+Si el usuario elige una contraseña débil (por ejemplo, palabras comunes de diccionario o combinaciones cortas como `123456`), **la seguridad del sistema se reduce drásticamente**. 
+
+Aunque el uso de **Argon2id** mitiga parcialmente este riesgo al ralentizar intencionalmente el proceso de descifrado (~1 segundo por intento en hardware moderno) e impedir ataques masivos en paralelo con tarjetas gráficas (GPU/FPGA) gracias al consumo obligatorio de memoria (64 MiB), no puede hacer milagros. Un atacante motivado que robe el archivo `.encrypted` podrá realizar un ataque de fuerza bruta offline basado en diccionarios optimizados. Si la contraseña se encuentra en esos diccionarios, el atacante eventualmente derivará la clave correcta y vulnerará la bóveda. La fortaleza de la contraseña sigue siendo la primera línea de defensa.
+
+### • ¿Cuáles son las limitaciones del sistema?
+
+Actualmente, el modelo de seguridad de la Bóveda Digital presenta las siguientes limitaciones de diseño:
+
+1. **Ausencia de políticas de complejidad en contraseñas:** El sistema no valida activamente la entropía o longitud de la contraseña en el registro, delegando por completo esta responsabilidad crítica en el usuario.
+2. **Dependencia de la integridad de la base de datos para firmas:** La clave pública de verificación Ed25519 se consulta directamente desde la base de datos del servidor (`users.signing_public_key`). Si el servidor es comprometido a nivel de persistencia, un atacante podría suplantar claves públicas para hacer pasar firmas falsas como válidas (falta una infraestructura PKI interna o un modelo de *Web of Trust*).
+3. **Mecanismo de revocación inexistente:** Si una clave privada o contraseña se compromete, no existe un canal para revocar o marcar esas claves como "inválidas" de forma global. la única solución actual es el abandono manual de la cuenta y la migración a una nueva.
+4. **Falta de rotación automatizada:** Cambiar de claves implica re-cifrar y volver a compartir manualmente los archivos históricos, ya que el sistema no soporta la actualización de texto cifrado para múltiples destinatarios de forma dinámica.
 
 ## 📦 Dependencias Principales
 
